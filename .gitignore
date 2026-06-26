@@ -1,0 +1,125 @@
+# =========================
+# OS / Editor files
+# =========================
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+
+*.swp
+*.swo
+
+
+# =========================
+# Environment variables / secrets
+# =========================
+.env
+.env.*
+!.env.example
+
+*.pem
+*.key
+*.crt
+
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+.venv/
+venv/
+env/
+
+pip-wheel-metadata/
+build/
+dist/
+*.egg-info/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+
+# =========================
+# Node / Frontend
+# =========================
+node_modules/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+.next/
+dist/
+build/
+
+
+# =========================
+# AI / RAG project files
+# =========================
+# Local vector DB data
+chroma/
+chromadb/
+.vectorstore/
+.vector_db/
+qdrant_storage/
+
+# Large generated files
+embeddings/
+*.embeddings.json
+*.vectors.json
+*.pkl
+
+# Scraped/raw/generated content
+data/raw/
+data/cleaned/
+data/chunks/
+data/exports/
+
+# Logs
+logs/
+*.log
+
+
+# =========================
+# WordPress
+# =========================
+wp-config.php
+
+# WordPress uploads can be huge and should usually not be committed
+wp-content/uploads/
+wp-content/cache/
+wp-content/upgrade/
+wp-content/backup*/
+wp-content/backups*/
+wp-content/wflogs/
+
+# Plugin/theme generated files
+wp-content/debug.log
+wp-content/ai1wm-backups/
+wp-content/updraft/
+
+
+# =========================
+# Composer / PHP
+# =========================
+vendor/
+composer.phar
+
+
+# =========================
+# Database / backups
+# =========================
+*.sql
+*.sql.gz
+*.sqlite
+*.db
+
+backup/
+backups/
