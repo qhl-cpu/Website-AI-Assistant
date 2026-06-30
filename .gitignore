@@ -56,16 +56,36 @@ yarn-error.log*
 pnpm-debug.log*
 
 .next/
-dist/
-build/
 
 
 # =========================
 # AI / RAG project files
 # =========================
+
+# Raw scraped WordPress/private website data
+vl-rag-assistant/data/raw/*
+!vl-rag-assistant/data/raw/.gitkeep
+
+# Processed/generated RAG data
+vl-rag-assistant/data/processed/*
+!vl-rag-assistant/data/processed/.gitkeep
+
+vl-rag-assistant/data/cleaned/*
+!vl-rag-assistant/data/cleaned/.gitkeep
+
+vl-rag-assistant/data/chunks/*
+!vl-rag-assistant/data/chunks/.gitkeep
+
+vl-rag-assistant/data/debug/*
+!vl-rag-assistant/data/debug/.gitkeep
+
+vl-rag-assistant/data/exports/*
+!vl-rag-assistant/data/exports/.gitkeep
+
 # Local vector DB data
 chroma/
 chromadb/
+chroma_db/
 .vectorstore/
 .vector_db/
 qdrant_storage/
@@ -75,12 +95,6 @@ embeddings/
 *.embeddings.json
 *.vectors.json
 *.pkl
-
-# Scraped/raw/generated content
-data/raw/
-data/cleaned/
-data/chunks/
-data/exports/
 
 # Logs
 logs/
@@ -119,6 +133,7 @@ composer.phar
 *.sql
 *.sql.gz
 *.sqlite
+*.sqlite3
 *.db
 
 backup/
