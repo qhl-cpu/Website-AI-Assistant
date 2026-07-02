@@ -107,6 +107,9 @@ def detect_page_type(link: str, slug: str = "", post_type: str = "") -> str:
     if "blog" in value or post_type == "posts":
         return "blog"
 
+    if "page" in value or "pages" in value:
+        return "page"
+
     return "general"
 
 
