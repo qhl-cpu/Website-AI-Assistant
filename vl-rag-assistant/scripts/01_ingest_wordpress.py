@@ -92,14 +92,6 @@ def clean_title(title_html: str) -> str:
     return BeautifulSoup(title_html or "", "html.parser").get_text(" ", strip=True)
 
 
-def clean_private_title(title: str) -> str:
-    """
-    WordPress prefixes private post titles with 'Private:'.
-    Remove it so the document title is cleaner for RAG.
-    """
-    return title.replace("Private:", "").strip()
-
-
 def detect_page_type(link: str, slug: str = "", post_type: str = "") -> str:
     """
     Add a simple semantic category for later filtering/retrieval.
@@ -374,7 +366,7 @@ def build_document(item: dict, post_type: str) -> dict:
     slug = item.get("slug") or ""
     link = item.get("link") or ""
 
-    title = clean_private_title(clean_title(item.get("title", {}).get("rendered", "")))
+    title = clean_title(item.get("title", {}).get("rendered", ""))
 
     html = item.get("content", {}).get("rendered", "")
 
