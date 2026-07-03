@@ -104,6 +104,9 @@ def remove_common_noise(text: str) -> str:
         "next",
         "previous",
         "submit",
+
+        # Generic repeated ACF headings
+        "concern section title do you have these concerns",
     }
 
     cleaned_lines = []
