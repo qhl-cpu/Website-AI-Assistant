@@ -185,26 +185,44 @@ def clean_content(content: str) -> str:
     return content
 
 
-def is_document_usable(document: dict) -> bool:
+def is_test_document(title: str, url: str, content: str) -> bool:
+    """
+    Detect test/demo documents that should not be included in the RAG dataset.
+
+    """
+    # 1. Check URL.
+    if "test" in url.lower():
+        return True
+
+    # 2. Check title.
+    if "test" in title.lower():
+        return True
+
+    # 3. Check Treatment Or Concern Name specifically.
+    for line in content.split("\n"):
+        normalized_line = " ".join(line.split()).lower()
+
+        if normalized_line.startswith("treatment or concern name:"):
+            value = normalized_line.replace("treatment or concern name:", "").strip()
+
+            if "test" in value:
+                return True
+
+    return False
+
+
+def is_document_short(content: str) -> bool:
     """
     Decide whether a cleaned document should be kept.
 
     A document should have:
-    - a title or URL
-    - meaningful cleaned content
+    - have enough content
     """
-    title = document.get("title") or ""
-    url = document.get("url") or ""
-    content = document.get("content") or ""
-
-    if not title and not url:
-        return False
-
     # Avoid saving almost-empty pages.
     if len(content.split()) < 20:
-        return False
+        return True
 
-    return True
+    return False
 
 
 def clean_document(raw_document: dict) -> dict:
@@ -278,13 +296,24 @@ def main():
     raw_documents = read_jsonl(INPUT_PATH)
 
     cleaned_documents = []
-    skipped_count = 0
+    no_title_or_url_count = 0
+    short_count = 0
+    test_page_count = 0
 
     for raw_document in raw_documents:
         cleaned_document = clean_document(raw_document)
+        title = cleaned_document.get("title") or ""
+        url = cleaned_document.get("url") or ""
+        content = cleaned_document.get("content") or ""
 
-        if not is_document_usable(cleaned_document):
-            skipped_count += 1
+        if not title or not url:
+            no_title_or_url_count += 1
+            continue
+        if is_document_short(content):
+            short_count += 1
+            continue
+        if is_test_document(title, url, content):
+            test_page_count += 1
             continue
 
         cleaned_documents.append(cleaned_document)
@@ -293,7 +322,9 @@ def main():
 
     print(f"Read {len(raw_documents)} raw documents from {INPUT_PATH}")
     print(f"Saved {len(cleaned_documents)} cleaned documents to {OUTPUT_PATH}")
-    print(f"Skipped {skipped_count} documents because they were too short or unusable")
+    print(f"Skipped {no_title_or_url_count} documents because they doesn't have a title or url")
+    print(f"Skipped {short_count} documents because they were too short")
+    print(f"Skipped {test_page_count} documents because they were made for testing purpose")
 
     if cleaned_documents:
         word_counts = [doc["word_count"] for doc in cleaned_documents]
