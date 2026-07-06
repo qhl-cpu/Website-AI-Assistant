@@ -213,7 +213,32 @@ def is_probably_asset_or_relation_key(key: str) -> bool:
     return any(word in key_lower for word in ignored_contains)
 
 
-def flatten_acf_value(value, parent_key: str = "") -> list[str]:
+def add_repeater_index_to_label(label: str, index: int) -> str:
+    """
+    Add sequence numbers to labels from repeated ACF fields.
+
+    Example:
+    - Procedure Step Title -> Procedure Step 1 Title
+    - Procedure Step Description -> Procedure Step 1 Description
+    - FAQ Question -> FAQ 1 Question
+    - FAQ Answer -> FAQ 1 Answer
+    """
+    if label == "Procedure Step Title":
+        return f"Procedure Step {index} Title"
+
+    if label == "Procedure Step Description":
+        return f"Procedure Step {index} Description"
+
+    if label == "FAQ Question":
+        return f"FAQ {index} Question"
+
+    if label == "FAQ Answer":
+        return f"FAQ {index} Answer"
+
+    return label
+
+
+def flatten_acf_value(value, parent_key: str = "", repeater_index: int | None = None) -> list[str]:
     """
     Recursively extract readable text from ACF values.
 
@@ -222,6 +247,9 @@ def flatten_acf_value(value, parent_key: str = "") -> list[str]:
     - useful numbers
     - repeater fields
     - nested group fields
+
+    repeater_index is used to preserve order for repeated fields,
+    such as procedure steps and FAQ items.
     """
     texts = []
 
@@ -229,6 +257,9 @@ def flatten_acf_value(value, parent_key: str = "") -> list[str]:
         return texts
 
     label = prettify_acf_key(parent_key) if parent_key else ""
+
+    if repeater_index is not None and label:
+        label = add_repeater_index_to_label(label, repeater_index)
 
     if isinstance(value, str):
         cleaned = html_to_text(value)
@@ -255,7 +286,7 @@ def flatten_acf_value(value, parent_key: str = "") -> list[str]:
     if isinstance(value, list):
         for index, item in enumerate(value, start=1):
             if isinstance(item, dict):
-                texts.extend(flatten_acf_value(item, parent_key))
+                texts.extend(flatten_acf_value(item, parent_key, repeater_index=index))
             else:
                 texts.extend(flatten_acf_value(item, f"{parent_key} {index}"))
 
@@ -266,7 +297,7 @@ def flatten_acf_value(value, parent_key: str = "") -> list[str]:
             if is_probably_asset_or_relation_key(key):
                 continue
 
-            texts.extend(flatten_acf_value(item, key))
+            texts.extend(flatten_acf_value(item, key, repeater_index=repeater_index))
 
         return texts
 
