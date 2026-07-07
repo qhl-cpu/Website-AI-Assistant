@@ -18,6 +18,7 @@ from pathlib import Path
 
 INPUT_PATH = Path("data/raw/wp_documents_raw.jsonl")
 OUTPUT_PATH = Path("data/processed/wp_documents_clean.jsonl")
+MANUAL_INPUT_DIR = Path("data/manual")
 
 
 def normalize_whitespace(text: str) -> str:
@@ -283,6 +284,32 @@ def write_jsonl(path: Path, documents: list[dict]) -> None:
             f.write(json.dumps(document, ensure_ascii=False) + "\n")
 
 
+def read_manual_documents(directory: Path) -> list[dict]:
+    """
+    Read all manual JSONL files from the manual document directory.
+
+    Manual documents should use the same basic schema as WordPress documents:
+    - wp_id
+    - doc_id
+    - url
+    - title
+    - status
+    - post_type
+    - page_type
+    - content
+    - source
+    """
+    manual_documents = []
+
+    if not directory.exists():
+        return manual_documents
+
+    for path in sorted(directory.glob("*.jsonl")):
+        manual_documents.extend(read_jsonl(path))
+
+    return manual_documents
+
+
 def main():
     """
     Clean raw WordPress documents and save processed documents.
@@ -294,17 +321,22 @@ def main():
         )
 
     raw_documents = read_jsonl(INPUT_PATH)
+    manual_documents = read_manual_documents(MANUAL_INPUT_DIR)
+    all_documents = raw_documents + manual_documents
 
     cleaned_documents = []
     no_title_or_url_count = 0
     short_count = 0
     test_page_count = 0
+    manual_count = 0
 
-    for raw_document in raw_documents:
+    for raw_document in all_documents:
         cleaned_document = clean_document(raw_document)
         title = cleaned_document.get("title") or ""
         url = cleaned_document.get("url") or ""
         content = cleaned_document.get("content") or ""
+        source = cleaned_document.get("source") or ""
+
 
         if not title or not url:
             no_title_or_url_count += 1
@@ -315,16 +347,19 @@ def main():
         if is_test_document(title, url, content):
             test_page_count += 1
             continue
-
+        if source == "manual":
+            manual_count += 1
         cleaned_documents.append(cleaned_document)
 
     write_jsonl(OUTPUT_PATH, cleaned_documents)
 
     print(f"Read {len(raw_documents)} raw documents from {INPUT_PATH}")
-    print(f"Saved {len(cleaned_documents)} cleaned documents to {OUTPUT_PATH}")
+    print(f"Read {len(manual_documents)} manual documents from {MANUAL_INPUT_DIR}")
+    print(f"Added {manual_count} manual documents")
     print(f"Skipped {no_title_or_url_count} documents because they doesn't have a title or url")
     print(f"Skipped {short_count} documents because they were too short")
     print(f"Skipped {test_page_count} documents because they were made for testing purpose")
+    print(f"Saved {len(cleaned_documents)} cleaned documents to {OUTPUT_PATH}")
 
     if cleaned_documents:
         word_counts = [doc["word_count"] for doc in cleaned_documents]
