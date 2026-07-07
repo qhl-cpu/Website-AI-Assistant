@@ -31,6 +31,12 @@ ENCODING_NAME = "cl100k_base"
 MAX_TOKENS = 500
 OVERLAP_TOKENS = 80
 MIN_CHUNK_WORDS = 8
+IMPORTANT_SHORT_SECTION_TYPES = {
+    "duration",
+    "sessions",
+    "aftercare",
+    "operator",
+}
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -176,14 +182,31 @@ def get_section_group(label: str) -> str:
         "hero bullet text",
     }
 
-    treatment_detail_labels = {
-        "treatment areas",
+    duration_labels = {
         "treatment duration",
-        "recommended sessions",
-        "aftercare",
-        "how the treatment works",
+        "duration",
+    }
+
+    session_labels = {
         "min sessions",
         "max sessions",
+        "recommended sessions",
+    }
+
+    aftercare_labels = {
+        "aftercare",
+    }
+
+    treatment_area_labels = {
+        "treatment areas",
+    }
+
+    how_it_works_labels = {
+        "how the treatment works",
+        "how it works",
+    }
+
+    operator_labels = {
         "operator type",
     }
 
@@ -202,14 +225,29 @@ def get_section_group(label: str) -> str:
     if label_lower in overview_labels:
         return "overview"
 
+    if label_lower in duration_labels:
+        return "duration"
+
+    if label_lower in session_labels:
+        return "sessions"
+
+    if label_lower in aftercare_labels:
+        return "aftercare"
+
+    if label_lower in treatment_area_labels:
+        return "treatment_areas"
+
+    if label_lower in how_it_works_labels:
+        return "how_it_works"
+
+    if label_lower in operator_labels:
+        return "operator"
+
     if label_lower.startswith("concern "):
         return "concerns"
 
     if label_lower.startswith("benefit"):
         return "benefits"
-
-    if label_lower in treatment_detail_labels:
-        return "treatment_details"
 
     if label_lower.startswith("procedure step"):
         return "procedure"
@@ -356,6 +394,24 @@ def build_chunk(
     }
 
 
+def should_keep_section(section_type: str, text: str) -> bool:
+    """
+    Decide whether a section is worth saving as a chunk.
+
+    Most sections should have at least MIN_CHUNK_WORDS.
+    But factual sections like duration can be short and still important.
+    """
+    word_count = len(text.split())
+
+    if word_count >= MIN_CHUNK_WORDS:
+        return True
+
+    if section_type in IMPORTANT_SHORT_SECTION_TYPES and word_count >= 3:
+        return True
+
+    return False
+
+
 def chunk_document(document: dict, encoding) -> list[dict]:
     """
     Chunk one cleaned document.
@@ -381,7 +437,7 @@ def chunk_document(document: dict, encoding) -> list[dict]:
         section_type = section["section_type"]
         section_text = section["text"].strip()
 
-        if len(section_text.split()) < MIN_CHUNK_WORDS:
+        if not should_keep_section(section_type, section_text):
             continue
 
         token_count = count_tokens(section_text, encoding)
