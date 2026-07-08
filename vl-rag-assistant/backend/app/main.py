@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 
 app = FastAPI(
     title="Vancouver Laser RAG Assistant API",
@@ -18,3 +18,7 @@ def health_check():
     return {
         "status": "ok"
     }
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
