@@ -432,7 +432,7 @@ def build_document(item: dict, post_type: str) -> dict:
 
 def main():
     """
-    Ingest private WordPress pages and CPTs into a raw JSONL file.
+    Ingest publish WordPress pages and CPTs into a raw JSONL file.
 
     This script intentionally does not do final cleaning/chunking/embedding.
     Those steps are handled by later pipeline scripts.
@@ -446,9 +446,9 @@ def main():
         "concern",
     ]
 
-    # Current project state: private pages/CPTs are the main source.
+    # Current project state: publish pages/CPTs are the main source.
     statuses = [
-        "private",
+        "publish",
     ]
 
     total_saved = 0

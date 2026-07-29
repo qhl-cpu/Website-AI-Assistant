@@ -13,7 +13,7 @@ response = requests.get(
     f"{WP_BASE_URL}/wp-json/wp/v2/pages",
     auth=HTTPBasicAuth(WP_USERNAME, WP_APP_PASSWORD),
     params={
-        "status": "private",
+        "status": "publish",
         "per_page": 5,
     },
     timeout=20,

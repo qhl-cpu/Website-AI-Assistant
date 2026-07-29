@@ -62,7 +62,7 @@ pnpm-debug.log*
 # AI / RAG project files
 # =========================
 
-# Raw scraped WordPress/private website data
+# Raw scraped WordPress/publish website data
 vl-rag-assistant/data/raw/*
 !vl-rag-assistant/data/raw/.gitkeep
 

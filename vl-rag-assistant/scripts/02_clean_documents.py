@@ -141,13 +141,13 @@ def normalize_title(title: str) -> str:
     """
     Clean document titles.
 
-    01_ingest_wordpress.py already removes 'Private:',
+    01_ingest_wordpress.py already removes 'publish:',
     but this function gives us an extra safety layer.
     """
     if not title:
         return ""
 
-    title = title.replace("Private:", "")
+    title = title.replace("publish:", "")
     title = title.replace("Protected:", "")
     title = normalize_whitespace(title)
 
