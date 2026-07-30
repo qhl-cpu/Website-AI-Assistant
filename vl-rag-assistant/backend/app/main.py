@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -9,6 +11,9 @@ from app.schemas import (
 )
 from app.services.rag_service import answer_question, debug_search
 from app.services.vector_store import get_collection_point_count
+
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
@@ -76,11 +81,13 @@ def search(request: SearchRequest):
             "results": results
         }
 
-    except Exception as error:
+    except Exception:
+        logger.exception("Search request failed")
+
         raise HTTPException(
             status_code=500,
-            detail=str(error),
-        )
+            detail="Search is temporarily unavailable.",
+        ) from None
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -96,11 +103,13 @@ def chat(request: ChatRequest):
             sources=result["sources"],
         )
 
-    except Exception as error:
+    except Exception:
+        logger.exception("Chat request failed")
+
         raise HTTPException(
             status_code=500,
-            detail=str(error),
-        )
+            detail="The assistant is temporarily unavailable.",
+        ) from None
     
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():

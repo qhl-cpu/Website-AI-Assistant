@@ -1,18 +1,28 @@
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # Request body for the /chat endpoint.
 # The frontend sends this when a user asks the assistant a question.
 class ChatRequest(BaseModel):
     # User's message/question.
-    # Required and cannot be an empty string.
-    message: str = Field(..., min_length=1)
+    # Required and limited to keep public requests within a reasonable size.
+    message: str = Field(..., min_length=1, max_length=2000)
 
     # Optional ID for tracking one conversation session.
     # Useful later if we add chat history/memory.
-    session_id: Optional[str] = None
+    session_id: Optional[str] = Field(default=None, max_length=128)
+
+    @field_validator("message")
+    @classmethod
+    def normalize_message(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("Message cannot be blank.")
+
+        return value
 
 
 # One source document/chunk used to support the generated answer.
@@ -46,13 +56,23 @@ class ChatResponse(BaseModel):
 # Request body for the /search endpoint.
 # Used to test vector search directly without generating an AI answer.
 class SearchRequest(BaseModel):
-    # Search query. Required and cannot be empty.
-    query: str = Field(..., min_length=1)
+    # Search query. Required and limited to a reasonable public request size.
+    query: str = Field(..., min_length=1, max_length=2000)
 
     # Number of search results to return.
     # Defaults to 8.
     # Must be between 1 and 20.
     top_k: int = Field(default=8, ge=1, le=20)
+
+    @field_validator("query")
+    @classmethod
+    def normalize_query(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("Query cannot be blank.")
+
+        return value
 
 
 # One result returned by vector search.
