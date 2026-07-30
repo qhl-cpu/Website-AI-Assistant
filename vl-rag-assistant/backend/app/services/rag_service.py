@@ -43,20 +43,37 @@ def build_context(results: list[dict]) -> tuple[str, list[dict]]:
     context_parts = []
     sources = []
 
-    seen_urls = set()
+    source_ids_by_key = {}
 
     for index, result in enumerate(results, start=1):
         chunk = result["chunk"]
         score = result["score"]
 
-        source_id = f"S{index}"
-
         title = chunk.get("title") or ""
         url = chunk.get("url") or ""
+        chunk_id = chunk.get("chunk_id") or ""
         post_type = chunk.get("post_type") or ""
         page_type = chunk.get("page_type") or ""
         section_type = chunk.get("section_type") or ""
         text = (chunk.get("text") or "").strip()
+
+        source_key = url or chunk_id or f"result-{index}"
+        source_id = source_ids_by_key.get(source_key)
+
+        if source_id is None:
+            source_id = f"S{len(source_ids_by_key) + 1}"
+            source_ids_by_key[source_key] = source_id
+
+            if url:
+                sources.append(
+                    {
+                        "source_id": source_id,
+                        "title": title,
+                        "url": url,
+                        "section_type": section_type,
+                        "score": round(score, 4),
+                    }
+                )
 
         if len(text) > MAX_CONTEXT_CHARS_PER_CHUNK:
             text = text[:MAX_CONTEXT_CHARS_PER_CHUNK] + "..."
@@ -73,18 +90,6 @@ def build_context(results: list[dict]) -> tuple[str, list[dict]]:
         )
 
         context_parts.append(context_part)
-
-        if url and url not in seen_urls:
-            sources.append(
-                {
-                    "source_id": source_id,
-                    "title": title,
-                    "url": url,
-                    "section_type": section_type,
-                    "score": round(score, 4),
-                }
-            )
-            seen_urls.add(url)
 
     context = "\n\n---\n\n".join(context_parts)
 
