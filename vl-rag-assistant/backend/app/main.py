@@ -1,8 +1,13 @@
 import logging
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.config import (
+    ALLOWED_ORIGINS,
+    ENABLE_DIAGNOSTIC_ENDPOINTS,
+    IS_PRODUCTION,
+)
 from app.schemas import (
     ChatRequest,
     ChatResponse,
@@ -19,26 +24,24 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Vancouver Laser RAG Assistant API",
     version="0.1.0",
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
+    openapi_url=None if IS_PRODUCTION else "/openapi.json",
 )
-
-
-allowed_origins = [
-    "http://127.0.0.1:5500",
-    "http://localhost:5500",
-    "http://127.0.0.1:8000",
-    "http://localhost:8000",
-    "https://www.vancouverlaser.com",
-    "https://vancouverlaser.com",
-]
 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
     allow_methods=["POST", "GET", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type"],
 )
+
+
+def require_diagnostic_endpoints() -> None:
+    if not ENABLE_DIAGNOSTIC_ENDPOINTS:
+        raise HTTPException(status_code=404, detail="Not found.")
 
 
 @app.get("/")
@@ -55,7 +58,32 @@ def health_check():
     }
 
 
-@app.get("/stats")
+@app.get("/ready")
+def readiness_check():
+    """
+    Confirm that the API can reach its Qdrant collection.
+    """
+    try:
+        get_collection_point_count()
+
+    except Exception:
+        logger.exception("Readiness check failed")
+
+        raise HTTPException(
+            status_code=503,
+            detail="Service is not ready.",
+        ) from None
+
+    return {
+        "status": "ready"
+    }
+
+
+@app.get(
+    "/stats",
+    dependencies=[Depends(require_diagnostic_endpoints)],
+    include_in_schema=ENABLE_DIAGNOSTIC_ENDPOINTS,
+)
 def stats():
     """
     Check how many embedded chunks are stored in Qdrant.
@@ -65,7 +93,12 @@ def stats():
     }
 
 
-@app.post("/search", response_model=SearchResponse)
+@app.post(
+    "/search",
+    response_model=SearchResponse,
+    dependencies=[Depends(require_diagnostic_endpoints)],
+    include_in_schema=ENABLE_DIAGNOSTIC_ENDPOINTS,
+)
 def search(request: SearchRequest):
     """
     Debug endpoint for retrieval only.
