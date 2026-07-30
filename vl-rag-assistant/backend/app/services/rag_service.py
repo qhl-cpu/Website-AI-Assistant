@@ -1,57 +1,15 @@
-import json
-import math
-from functools import lru_cache
-
 from openai import OpenAI
 
 from app.core.config import (
     CHAT_MODEL,
     EMBEDDING_MODEL,
-    EMBEDDED_CHUNKS_PATH,
     MAX_CONTEXT_CHARS_PER_CHUNK,
     TOP_K,
 )
+from app.services.vector_store import search_qdrant
 
 
 client = OpenAI()
-
-
-def read_jsonl(path) -> list[dict]:
-    """
-    Read JSONL file into a list of dictionaries.
-    """
-    items = []
-
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Embedded chunks file not found: {path}. "
-            "Run 01, 02, 03, and 04 first."
-        )
-
-    with path.open("r", encoding="utf-8") as f:
-        for line_number, line in enumerate(f, start=1):
-            line = line.strip()
-
-            if not line:
-                continue
-
-            try:
-                items.append(json.loads(line))
-            except json.JSONDecodeError as error:
-                print(f"Skipping invalid JSON on line {line_number}: {error}")
-
-    return items
-
-
-@lru_cache(maxsize=1)
-def load_chunks() -> tuple[dict, ...]:
-    """
-    Load embedded chunks once and cache them.
-
-    This avoids re-reading wp_chunks_embedded.jsonl on every user question.
-    """
-    chunks = read_jsonl(EMBEDDED_CHUNKS_PATH)
-    return tuple(chunks)
 
 
 def create_query_embedding(query: str) -> list[float]:
@@ -66,52 +24,16 @@ def create_query_embedding(query: str) -> list[float]:
     return response.data[0].embedding
 
 
-def cosine_similarity(vector_a: list[float], vector_b: list[float]) -> float:
-    """
-    Calculate cosine similarity between two vectors.
-    """
-    dot_product = 0
-    norm_a = 0
-    norm_b = 0
-
-    for a, b in zip(vector_a, vector_b):
-        dot_product += a * b
-        norm_a += a * a
-        norm_b += b * b
-
-    if norm_a == 0 or norm_b == 0:
-        return 0
-
-    return dot_product / (math.sqrt(norm_a) * math.sqrt(norm_b))
-
-
 def search_chunks(query: str, top_k: int = TOP_K) -> list[dict]:
     """
-    Search embedded chunks using cosine similarity.
+    Embed the user's query and retrieve the closest chunks from Qdrant.
     """
-    chunks = load_chunks()
     query_embedding = create_query_embedding(query)
 
-    scored_chunks = []
-
-    for chunk in chunks:
-        chunk_embedding = chunk.get("embedding")
-
-        if not chunk_embedding:
-            continue
-
-        score = cosine_similarity(query_embedding, chunk_embedding)
-
-        scored_chunks.append(
-            {
-                "score": score,
-                "chunk": chunk,
-            }
-        )
-
-    scored_chunks.sort(key=lambda item: item["score"], reverse=True)
-
-    return scored_chunks[:top_k]
+    return search_qdrant(
+        query_embedding=query_embedding,
+        top_k=top_k,
+    )
 
 
 def build_context(results: list[dict]) -> tuple[str, list[dict]]:

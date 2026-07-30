@@ -7,7 +7,8 @@ from app.schemas import (
     SearchRequest,
     SearchResponse,
 )
-from app.services.rag_service import answer_question, debug_search, load_chunks
+from app.services.rag_service import answer_question, debug_search
+from app.services.vector_store import get_collection_point_count
 
 
 app = FastAPI(
@@ -30,7 +31,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -52,12 +53,10 @@ def health_check():
 @app.get("/stats")
 def stats():
     """
-    Check how many embedded chunks are loaded.
+    Check how many embedded chunks are stored in Qdrant.
     """
-    chunks = load_chunks()
-
     return {
-        "embedded_chunks_loaded": len(chunks)
+        "embedded_chunks_loaded": get_collection_point_count()
     }
 
 

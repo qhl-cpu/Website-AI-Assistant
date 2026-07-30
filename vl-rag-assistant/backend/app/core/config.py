@@ -21,8 +21,6 @@ QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4o-mini")
 
-EMBEDDED_CHUNKS_PATH = PROJECT_ROOT / "data" / "processed" / "wp_chunks_embedded.jsonl"
-
 TOP_K = int(os.getenv("TOP_K", "8"))
 MAX_CONTEXT_CHARS_PER_CHUNK = int(os.getenv("MAX_CONTEXT_CHARS_PER_CHUNK", "1200"))
 
