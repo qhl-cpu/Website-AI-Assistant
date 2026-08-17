@@ -6,6 +6,7 @@ from app.core.config import (
     MAX_CONTEXT_CHARS_PER_CHUNK,
     TOP_K,
 )
+from app.knowledge.clinic_policies import BOOKING_POLICY
 from app.services.vector_store import search_qdrant
 
 
@@ -98,21 +99,27 @@ def build_context(results: list[dict]) -> tuple[str, list[dict]]:
 
 def generate_answer(question: str, context: str) -> str:
     """
-    Generate a grounded answer using only retrieved website context.
+    Generate an answer grounded in clinic policies and website context.
     """
-    system_prompt = """
+    system_prompt = f"""
 You are a helpful website assistant for Vancouver Laser & Skin Care Centre.
 
 Rules:
-- Answer using only the provided website context.
-- Do not invent details that are not in the context.
-- If the answer is not in the context, say you do not have enough information from the website content.
+- Answer using only the authoritative clinic policies and provided website context.
+- The authoritative clinic policies take precedence if the website context is ambiguous or conflicts with them.
+- Do not invent details that are not in the clinic policies or website context.
+- If the answer is in neither, say you do not have enough information.
 - Do not diagnose medical conditions.
 - Do not guarantee treatment results.
 - Do not say a treatment is definitely suitable for the user.
+- For appointment and booking questions, follow the authoritative clinic booking policy.
+- Do not infer that a doctor can be booked directly from profiles, titles, testimonials, past appointments, or generic clinic booking links.
 - Recommend booking a free consultation with our professional consultants when suitability depends on skin type, health history, pregnancy, medication, recent sun exposure, or other personal factors.
 - Keep answers clear, friendly, and concise.
 - Include source labels like [S1] or [S2] when using information from a source.
+
+Authoritative clinic policies:
+{BOOKING_POLICY}
 """.strip()
 
     user_prompt = f"""
@@ -122,7 +129,7 @@ User question:
 Website context:
 {context}
 
-Answer the user's question using only the website context above.
+Answer the user's question using the authoritative clinic policies and website context above.
 """.strip()
 
     response = client.chat.completions.create(
