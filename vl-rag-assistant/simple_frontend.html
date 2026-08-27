@@ -1,28 +1,40 @@
 <!-- Vancouver Laser AI Assistant Widget -->
 <div id="vl-ai-widget">
   <!-- Floating Button -->
-  <button id="vl-ai-toggle" aria-label="Open chat assistant">
+  <button
+    id="vl-ai-toggle"
+    aria-label="Open chat assistant"
+    aria-expanded="false"
+  >
     <span class="vl-ai-toggle-icon">✦</span>
     <span class="vl-ai-toggle-text">Ask VL</span>
   </button>
 
   <!-- Chat Window -->
-  <div id="vl-ai-panel" aria-hidden="true">
+  <div
+    id="vl-ai-panel"
+    role="dialog"
+    aria-labelledby="vl-ai-title"
+    aria-hidden="true"
+  >
     <div class="vl-ai-header">
       <div>
-        <div class="vl-ai-title">Vancouver Laser Assistant</div>
+        <div id="vl-ai-title" class="vl-ai-title">Vancouver Laser Assistant</div>
         <div class="vl-ai-subtitle">Ask about treatments, concerns, and booking.</div>
       </div>
 
       <button id="vl-ai-close" aria-label="Close chat">×</button>
     </div>
 
-    <div id="vl-ai-messages">
+    <div id="vl-ai-messages" role="log" aria-live="polite">
       <div class="vl-ai-message vl-ai-message-bot">
-        <div class="vl-ai-bubble">
-          Hi! How can I help you today?
-        </div>
+        <div class="vl-ai-bubble">Hi! How can I help you today?</div>
       </div>
+    </div>
+
+    <div class="vl-ai-disclaimer">
+      General information only—not medical advice. Please do not share sensitive
+      health information.
     </div>
 
     <form id="vl-ai-form">
@@ -31,6 +43,8 @@
         type="text"
         placeholder="Ask a question..."
         autocomplete="off"
+        maxlength="2000"
+        aria-label="Ask the Vancouver Laser Assistant a question"
       />
       <button id="vl-ai-send" type="submit">Send</button>
     </form>
@@ -276,6 +290,15 @@
     border-top: 1px solid var(--vl-ai-border);
   }
 
+  .vl-ai-disclaimer {
+    padding: 9px 18px;
+    background: #ffffff;
+    border-top: 1px solid var(--vl-ai-border);
+    color: var(--vl-ai-gray);
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
   #vl-ai-input {
     flex: 1;
     min-width: 0;
@@ -342,7 +365,15 @@
 
 <script>
   (function () {
-    const API_URL = "http://127.0.0.1:8000/chat";
+    const API_URL =
+      "https://vl-rag-api.kindmeadow-d51e6351.westus2.azurecontainerapps.io/chat";
+    const REQUEST_TIMEOUT_MS = 45000;
+    const SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+    const MAX_HISTORY_MESSAGES = 60;
+    const MAX_HISTORY_CHARS = 60000;
+    const CONVERSATION_STORAGE_KEY = "vl_ai_conversation_state_v2";
+    const EXPIRED_SESSION_GREETING =
+      "Welcome back. For your privacy, your previous conversation expired after 5 minutes of inactivity, so I’ve started a new conversation. How can I help you?";
 
     const toggleButton = document.getElementById("vl-ai-toggle");
     const closeButton = document.getElementById("vl-ai-close");
@@ -351,7 +382,45 @@
     const input = document.getElementById("vl-ai-input");
     const messages = document.getElementById("vl-ai-messages");
 
-    let sessionId = getOrCreateSessionId();
+    const initialConversation = readConversationState();
+    let conversationState =
+      initialConversation.state || createConversationState();
+    let sessionId = conversationState.sessionId;
+    let conversationHistory = conversationState.history;
+    let shouldAnnounceExpiredSession = initialConversation.expired;
+    let conversationExpiryTimerId = null;
+
+    if (!initialConversation.state) {
+      saveConversationState();
+    } else {
+      scheduleConversationExpiration();
+    }
+
+    window.addEventListener("storage", function (event) {
+      if (event.key !== CONVERSATION_STORAGE_KEY) {
+        return;
+      }
+
+      const storedConversation = readConversationState();
+
+      if (!storedConversation.state) {
+        conversationHistory = [];
+        conversationState.history = [];
+        shouldAnnounceExpiredSession = true;
+        return;
+      }
+
+      const sessionChanged =
+        storedConversation.state.sessionId !== sessionId;
+
+      applyConversationState(storedConversation.state);
+      scheduleConversationExpiration();
+
+      if (sessionChanged) {
+        shouldAnnounceExpiredSession = true;
+        announceExpiredSessionIfNeeded();
+      }
+    });
 
     toggleButton.addEventListener("click", function () {
       openPanel();
@@ -370,12 +439,20 @@
         return;
       }
 
+      ensureActiveConversation();
+      announceExpiredSessionIfNeeded();
+      touchConversation();
+
       addMessage("user", userMessage);
       input.value = "";
 
       setInputState(false);
 
       const typingElement = addTypingIndicator();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(function () {
+        controller.abort();
+      }, REQUEST_TIMEOUT_MS);
 
       try {
         const response = await fetch(API_URL, {
@@ -385,8 +462,10 @@
           },
           body: JSON.stringify({
             message: userMessage,
-            session_id: sessionId
-          })
+            session_id: sessionId,
+            history: conversationHistory
+          }),
+          signal: controller.signal
         });
 
         const data = await response.json();
@@ -400,24 +479,38 @@
         }
 
         addBotResponse(data);
+        rememberExchange(userMessage, data.answer);
       } catch (error) {
         typingElement.remove();
 
-        addMessage(
-          "bot",
-          "Sorry, I could not connect to the assistant server. Please make sure your FastAPI backend is running."
-        );
+        if (error.name === "AbortError") {
+          addMessage(
+            "bot",
+            "The assistant is taking longer than expected. Please try again."
+          );
+        } else {
+          addMessage(
+            "bot",
+            "Sorry, the assistant is temporarily unavailable. Please try again shortly."
+          );
+        }
 
         console.error(error);
       } finally {
+        clearTimeout(timeoutId);
         setInputState(true);
         input.focus();
       }
     });
 
     function openPanel() {
+      ensureActiveConversation();
+      announceExpiredSessionIfNeeded();
+      touchConversation();
+
       panel.classList.add("vl-ai-open");
       panel.setAttribute("aria-hidden", "false");
+      toggleButton.setAttribute("aria-expanded", "true");
       setTimeout(function () {
         input.focus();
       }, 200);
@@ -426,6 +519,7 @@
     function closePanel() {
       panel.classList.remove("vl-ai-open");
       panel.setAttribute("aria-hidden", "true");
+      toggleButton.setAttribute("aria-expanded", "false");
     }
 
     function addMessage(sender, text) {
@@ -467,14 +561,16 @@
         sourcesBox.appendChild(sourcesTitle);
 
         data.sources.slice(0, 3).forEach(function (source) {
-          if (!source || !source.title) {
+          const safeUrl = getSafeSourceUrl(source && source.url);
+
+          if (!source || !source.title || !safeUrl) {
             return;
           }
 
           const sourceLink = document.createElement("a");
           sourceLink.className = "vl-ai-source-link";
           sourceLink.textContent = source.title;
-          sourceLink.href = source.url || "#";
+          sourceLink.href = safeUrl;
           sourceLink.target = "_blank";
           sourceLink.rel = "noopener noreferrer";
 
@@ -547,18 +643,227 @@
       return JSON.stringify(data, null, 2);
     }
 
-    function getOrCreateSessionId() {
-      const storageKey = "vl_ai_session_id";
-      let existingSessionId = localStorage.getItem(storageKey);
-
-      if (existingSessionId) {
-        return existingSessionId;
+    function getSafeSourceUrl(value) {
+      if (!value) {
+        return null;
       }
 
-      const newSessionId = "vl-session-" + Date.now() + "-" + Math.random().toString(16).slice(2);
-      localStorage.setItem(storageKey, newSessionId);
+      try {
+        const url = new URL(value);
 
-      return newSessionId;
+        if (url.protocol === "https:" || url.protocol === "http:") {
+          return url.href;
+        }
+      } catch (error) {
+        console.error("Invalid source URL", error);
+      }
+
+      return null;
+    }
+
+    function rememberExchange(userMessage, assistantMessage) {
+      if (!assistantMessage) {
+        return;
+      }
+
+      conversationHistory.push(
+        {
+          role: "user",
+          content: userMessage
+        },
+        {
+          role: "assistant",
+          content: String(assistantMessage).slice(0, 4000)
+        }
+      );
+
+      conversationHistory = sanitizeHistory(conversationHistory);
+      conversationState.history = conversationHistory;
+      touchConversation();
+    }
+
+    function readConversationState() {
+      try {
+        const rawState = localStorage.getItem(CONVERSATION_STORAGE_KEY);
+
+        if (!rawState) {
+          return { state: null, expired: false };
+        }
+
+        const parsedState = JSON.parse(rawState);
+
+        if (
+          !parsedState ||
+          typeof parsedState.sessionId !== "string" ||
+          typeof parsedState.lastActivityAt !== "number"
+        ) {
+          return { state: null, expired: false };
+        }
+
+        if (
+          Date.now() - parsedState.lastActivityAt >=
+          SESSION_IDLE_TIMEOUT_MS
+        ) {
+          localStorage.removeItem(CONVERSATION_STORAGE_KEY);
+          return { state: null, expired: true };
+        }
+
+        return {
+          state: {
+            sessionId: parsedState.sessionId,
+            history: sanitizeHistory(parsedState.history),
+            lastActivityAt: parsedState.lastActivityAt
+          },
+          expired: false
+        };
+      } catch (error) {
+        return { state: null, expired: false };
+      }
+    }
+
+    function createConversationState() {
+      return {
+        sessionId: createSessionId(),
+        history: [],
+        lastActivityAt: Date.now()
+      };
+    }
+
+    function applyConversationState(nextState) {
+      conversationState = nextState;
+      sessionId = nextState.sessionId;
+      conversationHistory = nextState.history;
+    }
+
+    function ensureActiveConversation() {
+      const storedConversation = readConversationState();
+
+      if (storedConversation.state) {
+        const sessionChanged =
+          storedConversation.state.sessionId !== sessionId;
+
+        applyConversationState(storedConversation.state);
+
+        if (sessionChanged) {
+          shouldAnnounceExpiredSession = true;
+        }
+
+        return;
+      }
+
+      applyConversationState(createConversationState());
+      shouldAnnounceExpiredSession = true;
+      saveConversationState();
+    }
+
+    function announceExpiredSessionIfNeeded() {
+      if (!shouldAnnounceExpiredSession) {
+        return;
+      }
+
+      messages.innerHTML = "";
+      addMessage("bot", EXPIRED_SESSION_GREETING);
+      shouldAnnounceExpiredSession = false;
+    }
+
+    function touchConversation() {
+      conversationState.lastActivityAt = Date.now();
+      conversationState.history = conversationHistory;
+      saveConversationState();
+    }
+
+    function saveConversationState() {
+      try {
+        localStorage.setItem(
+          CONVERSATION_STORAGE_KEY,
+          JSON.stringify(conversationState)
+        );
+        scheduleConversationExpiration();
+      } catch (error) {
+        console.error("Could not save conversation state", error);
+      }
+    }
+
+    function scheduleConversationExpiration() {
+      if (conversationExpiryTimerId !== null) {
+        window.clearTimeout(conversationExpiryTimerId);
+      }
+
+      const remainingTime = Math.max(
+        0,
+        conversationState.lastActivityAt +
+          SESSION_IDLE_TIMEOUT_MS -
+          Date.now()
+      );
+
+      conversationExpiryTimerId = window.setTimeout(function () {
+        const storedConversation = readConversationState();
+
+        if (storedConversation.state) {
+          applyConversationState(storedConversation.state);
+          scheduleConversationExpiration();
+          return;
+        }
+
+        conversationHistory = [];
+        conversationState.history = [];
+        shouldAnnounceExpiredSession = true;
+        conversationExpiryTimerId = null;
+      }, remainingTime + 50);
+    }
+
+    function sanitizeHistory(rawHistory) {
+      if (!Array.isArray(rawHistory)) {
+        return [];
+      }
+
+      const sanitizedReverse = [];
+      let totalChars = 0;
+      const recentHistory = rawHistory.slice(-MAX_HISTORY_MESSAGES).reverse();
+
+      for (let index = 0; index < recentHistory.length; index += 1) {
+        const message = recentHistory[index];
+
+        if (
+          !message ||
+          (message.role !== "user" && message.role !== "assistant") ||
+          typeof message.content !== "string" ||
+          !message.content.trim()
+        ) {
+          continue;
+        }
+
+        const maxMessageChars = message.role === "user" ? 2000 : 4000;
+        const content = message.content.trim().slice(0, maxMessageChars);
+
+        if (totalChars + content.length > MAX_HISTORY_CHARS) {
+          break;
+        }
+
+        sanitizedReverse.push({
+          role: message.role,
+          content: content
+        });
+        totalChars += content.length;
+      }
+
+      return sanitizedReverse.reverse();
+    }
+
+    function createSessionId() {
+      if (
+        window.crypto &&
+        typeof window.crypto.randomUUID === "function"
+      ) {
+        return "vl-session-" + window.crypto.randomUUID();
+      }
+
+      return (
+        "vl-session-" +
+        Date.now() +
+        "-" +
+        Math.random().toString(16).slice(2)
+      );
     }
   })();
 </script>

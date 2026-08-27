@@ -129,7 +129,8 @@ def chat(request: ChatRequest):
     Main endpoint used by the website chat widget.
     """
     try:
-        result = answer_question(request.message)
+        history = [message.model_dump() for message in request.history]
+        result = answer_question(request.message, history=history)
 
         return ChatResponse(
             answer=result["answer"],

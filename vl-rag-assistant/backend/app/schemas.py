@@ -1,6 +1,29 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+MAX_CHAT_HISTORY_MESSAGES = 60
+MAX_CHAT_HISTORY_CHARS = 60000
+
+
+class ChatMessage(BaseModel):
+    # Only user and assistant turns belong in client-provided conversation history.
+    role: Literal["user", "assistant"]
+
+    # Keep individual turns bounded so a public request cannot create an
+    # unexpectedly large model prompt.
+    content: str = Field(..., min_length=1, max_length=4000)
+
+    @field_validator("content")
+    @classmethod
+    def normalize_content(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("Message content cannot be blank.")
+
+        return value
 
 
 # Request body for the /chat endpoint.
@@ -11,8 +34,14 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
 
     # Optional ID for tracking one conversation session.
-    # Useful later if we add chat history/memory.
     session_id: Optional[str] = Field(default=None, max_length=128)
+
+    # Completed turns from this session, oldest first. The current user message
+    # stays in `message` and must not be repeated here.
+    history: List[ChatMessage] = Field(
+        default_factory=list,
+        max_length=MAX_CHAT_HISTORY_MESSAGES,
+    )
 
     @field_validator("message")
     @classmethod
@@ -23,6 +52,17 @@ class ChatRequest(BaseModel):
             raise ValueError("Message cannot be blank.")
 
         return value
+
+    @model_validator(mode="after")
+    def limit_total_history_size(self):
+        total_chars = sum(len(message.content) for message in self.history)
+
+        if total_chars > MAX_CHAT_HISTORY_CHARS:
+            raise ValueError(
+                "Conversation history is too large. Start a new conversation."
+            )
+
+        return self
 
 
 # One source document/chunk used to support the generated answer.

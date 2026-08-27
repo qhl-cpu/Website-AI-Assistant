@@ -96,6 +96,110 @@ def cosine_similarity(vector_a: list[float], vector_b: list[float]) -> float:
     return dot_product / (math.sqrt(norm_a) * math.sqrt(norm_b))
 
 
+def is_procedure_query(query: str) -> bool:
+    """
+    Detect whether the user is asking about procedure/process/steps.
+
+    This does not affect the embedding score.
+    It only decides whether we should include sibling procedure chunks.
+    """
+    query_lower = query.lower()
+
+    procedure_phrases = [
+        "procedure",
+        "process",
+        "steps",
+        "step",
+        "what to expect",
+    ]
+
+    return any(phrase in query_lower for phrase in procedure_phrases)
+
+
+def sort_procedure_results(results: list[dict]) -> list[dict]:
+    """
+    Sort expanded procedure results so procedure steps appear in a readable order.
+
+    Procedure chunks from the same treatment are ordered by chunk_index.
+    Non-procedure chunks stay after procedure chunks for the same document.
+    """
+    def sort_key(result: dict):
+        chunk = result["chunk"]
+
+        doc_id = chunk.get("doc_id") or ""
+        section_type = chunk.get("section_type") or ""
+        chunk_index = chunk.get("chunk_index") or 0
+
+        is_not_procedure = section_type != "procedure"
+
+        return (
+            doc_id,
+            is_not_procedure,
+            chunk_index,
+        )
+
+    return sorted(results, key=sort_key)
+
+
+def expand_procedure_results(
+    query: str,
+    results: list[dict],
+    chunks: list[dict],
+) -> list[dict]:
+    """
+    If the query asks about procedure/process/steps and one procedure chunk
+    is retrieved, include all other procedure chunks from the same document.
+
+    This solves the issue where only Procedure Step 1 appears but Step 2,
+    Step 3, etc. are missing.
+    """
+    if not is_procedure_query(query):
+        return results
+
+    matched_doc_ids = set()
+
+    # Find which documents already have procedure chunks in the result list.
+    for result in results:
+        chunk = result["chunk"]
+
+        if chunk.get("section_type") == "procedure":
+            doc_id = chunk.get("doc_id")
+
+            if doc_id:
+                matched_doc_ids.add(doc_id)
+
+    if not matched_doc_ids:
+        return results
+
+    existing_chunk_ids = {
+        result["chunk"].get("chunk_id")
+        for result in results
+    }
+
+    expanded_results = list(results)
+
+    # Add sibling procedure chunks from the same document.
+    for chunk in chunks:
+        if chunk.get("doc_id") not in matched_doc_ids:
+            continue
+
+        if chunk.get("section_type") != "procedure":
+            continue
+
+        if chunk.get("chunk_id") in existing_chunk_ids:
+            continue
+
+        expanded_results.append(
+            {
+                "score": None,
+                "chunk": chunk,
+                "expanded": True,
+            }
+        )
+
+    return sort_procedure_results(expanded_results)
+
+
 def search_chunks(query: str, chunks: list[dict], top_k: int = TOP_K) -> list[dict]:
     """
     Search embedded chunks using cosine similarity.
@@ -121,7 +225,15 @@ def search_chunks(query: str, chunks: list[dict], top_k: int = TOP_K) -> list[di
 
     scored_chunks.sort(key=lambda item: item["score"], reverse=True)
 
-    return scored_chunks[:top_k]
+    results = scored_chunks[:top_k]
+
+    results = expand_procedure_results(
+        query=query,
+        results=results,
+        chunks=chunks,
+    )
+
+    return results
 
 
 def print_results(query: str, results: list[dict]) -> None:
@@ -133,7 +245,7 @@ def print_results(query: str, results: list[dict]) -> None:
     print("=" * 80)
 
     for index, result in enumerate(results, start=1):
-        score = result["score"]
+        score = result.get("score")
         chunk = result["chunk"]
 
         title = chunk.get("title", "")
@@ -146,7 +258,10 @@ def print_results(query: str, results: list[dict]) -> None:
 
         print(f"\nResult {index}")
         print("-" * 80)
-        print(f"Score: {score:.4f}")
+        if score is None:
+            print("Score: expanded sibling chunk")
+        else:
+            print(f"Score: {score:.4f}")
         print(f"Title: {title}")
         print(f"Page Type: {page_type}")
         print(f"Section Type: {section_type}")
