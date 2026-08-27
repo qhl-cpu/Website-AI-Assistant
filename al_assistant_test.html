@@ -893,6 +893,8 @@
     min-height: 0;
     padding: 17px;
     overflow-y: auto;
+    overflow-anchor: none;
+    scroll-behavior: auto;
     background:
       radial-gradient(
         circle at top left,
@@ -1580,8 +1582,6 @@
           data = null;
         }
 
-        typingMessage.remove();
-
         if (!response.ok) {
           const errorRecord = createRecord(
             question,
@@ -1590,7 +1590,9 @@
             "api_error"
           );
 
-          addBotMessage(errorRecord);
+          replaceTypingIndicator(typingMessage, function () {
+            addBotMessage(errorRecord, false);
+          });
           return;
         }
 
@@ -1608,10 +1610,10 @@
           "answer"
         );
 
-        addBotMessage(record);
+        replaceTypingIndicator(typingMessage, function () {
+          addBotMessage(record, false);
+        });
       } catch (error) {
-        typingMessage.remove();
-
         const errorMessage =
           error.name === "AbortError"
             ? "The assistant is taking longer than expected. Please try again."
@@ -1624,11 +1626,13 @@
           error.name === "AbortError" ? "timeout" : "network_error"
         );
 
-        addBotMessage(errorRecord);
+        replaceTypingIndicator(typingMessage, function () {
+          addBotMessage(errorRecord, false);
+        });
       } finally {
         window.clearTimeout(timeoutId);
         setInputState(true);
-        chatInput.focus();
+        focusChatInputWithoutScrolling();
       }
     });
 
@@ -1652,7 +1656,7 @@
       scrollToBottom();
     }
 
-    function addBotMessage(record) {
+    function addBotMessage(record, shouldScroll) {
       const message = document.createElement("div");
       message.className = "vl-test-message vl-test-message-bot";
 
@@ -1694,7 +1698,9 @@
       message.appendChild(content);
       messages.appendChild(message);
 
-      scrollToBottom();
+      if (shouldScroll !== false) {
+        scrollToBottom();
+      }
     }
 
     function createFeedbackPanel(record) {
@@ -2070,6 +2076,30 @@
 
     function scrollToBottom() {
       messages.scrollTop = messages.scrollHeight;
+    }
+
+    function replaceTypingIndicator(typingMessage, addResponse) {
+      const scrollTop = messages.scrollTop;
+
+      typingMessage.remove();
+      addResponse();
+      restoreMessageScroll(scrollTop);
+    }
+
+    function restoreMessageScroll(scrollTop) {
+      messages.scrollTop = scrollTop;
+
+      window.requestAnimationFrame(function () {
+        messages.scrollTop = scrollTop;
+      });
+    }
+
+    function focusChatInputWithoutScrolling() {
+      try {
+        chatInput.focus({ preventScroll: true });
+      } catch (error) {
+        chatInput.focus();
+      }
     }
 
     function getCurrentSessionRecords() {

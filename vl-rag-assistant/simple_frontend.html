@@ -183,6 +183,8 @@
     flex: 1;
     padding: 20px 18px;
     overflow-y: auto;
+    overflow-anchor: none;
+    scroll-behavior: auto;
     background:
       radial-gradient(circle at top left, rgba(212, 168, 79, 0.12), transparent 32%),
       var(--vl-ai-cream-light);
@@ -476,36 +478,44 @@
 
         const data = await response.json();
 
-        typingElement.remove();
-
         if (!response.ok) {
           const errorMessage = getErrorMessage(data);
-          addMessage("bot", "Sorry, something went wrong:\n" + errorMessage);
+          replaceTypingIndicator(typingElement, function () {
+            addMessage(
+              "bot",
+              "Sorry, something went wrong:\n" + errorMessage,
+              false
+            );
+          });
           return;
         }
 
-        addBotResponse(data);
+        replaceTypingIndicator(typingElement, function () {
+          addBotResponse(data, false);
+        });
         rememberExchange(userMessage, data.answer);
       } catch (error) {
-        typingElement.remove();
-
-        if (error.name === "AbortError") {
-          addMessage(
-            "bot",
-            "The assistant is taking longer than expected. Please try again."
-          );
-        } else {
-          addMessage(
-            "bot",
-            "Sorry, the assistant is temporarily unavailable. Please try again shortly."
-          );
-        }
+        replaceTypingIndicator(typingElement, function () {
+          if (error.name === "AbortError") {
+            addMessage(
+              "bot",
+              "The assistant is taking longer than expected. Please try again.",
+              false
+            );
+          } else {
+            addMessage(
+              "bot",
+              "Sorry, the assistant is temporarily unavailable. Please try again shortly.",
+              false
+            );
+          }
+        });
 
         console.error(error);
       } finally {
         clearTimeout(timeoutId);
         setInputState(true);
-        input.focus();
+        focusInputWithoutScrolling();
       }
     });
 
@@ -528,7 +538,7 @@
       toggleButton.setAttribute("aria-expanded", "false");
     }
 
-    function addMessage(sender, text) {
+    function addMessage(sender, text, shouldScroll) {
       const message = document.createElement("div");
       message.className = "vl-ai-message vl-ai-message-" + sender;
 
@@ -539,12 +549,14 @@
       message.appendChild(bubble);
       messages.appendChild(message);
 
-      scrollToBottom();
+      if (shouldScroll !== false) {
+        scrollToBottom();
+      }
 
       return message;
     }
 
-    function addBotResponse(data) {
+    function addBotResponse(data, shouldScroll) {
       const answer = data.answer || "I received your question, but no answer was returned.";
 
       const message = document.createElement("div");
@@ -589,7 +601,9 @@
       message.appendChild(bubble);
       messages.appendChild(message);
 
-      scrollToBottom();
+      if (shouldScroll !== false) {
+        scrollToBottom();
+      }
     }
 
     function addTypingIndicator() {
@@ -625,6 +639,30 @@
 
     function scrollToBottom() {
       messages.scrollTop = messages.scrollHeight;
+    }
+
+    function replaceTypingIndicator(typingElement, addResponse) {
+      const scrollTop = messages.scrollTop;
+
+      typingElement.remove();
+      addResponse();
+      restoreMessageScroll(scrollTop);
+    }
+
+    function restoreMessageScroll(scrollTop) {
+      messages.scrollTop = scrollTop;
+
+      window.requestAnimationFrame(function () {
+        messages.scrollTop = scrollTop;
+      });
+    }
+
+    function focusInputWithoutScrolling() {
+      try {
+        input.focus({ preventScroll: true });
+      } catch (error) {
+        input.focus();
+      }
     }
 
     function getErrorMessage(data) {
