@@ -12,6 +12,7 @@ from app.services.rag_service import (
     build_retrieval_query,
     create_contextualized_retrieval_query,
     generate_answer,
+    remove_inline_source_labels,
 )
 
 
@@ -164,6 +165,46 @@ class ChatMemoryTests(unittest.TestCase):
         self.assertEqual(history, messages[1:3])
         self.assertIn("How much does it cost?", messages[-1]["content"])
         self.assertEqual("It depends on the area.", answer)
+
+    @patch("app.services.rag_service.client.chat.completions.create")
+    def test_generate_answer_removes_inline_source_labels(
+        self,
+        create_completion_mock,
+    ):
+        create_completion_mock.return_value = SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content="Sofwave uses ultrasound energy [S1]. Results vary [S2, S3]."
+                    )
+                )
+            ]
+        )
+
+        answer = generate_answer(
+            "What is Sofwave?",
+            "Sofwave context",
+        )
+
+        self.assertEqual(
+            "Sofwave uses ultrasound energy. Results vary.",
+            answer,
+        )
+
+        system_prompt = create_completion_mock.call_args.kwargs["messages"][0][
+            "content"
+        ]
+        self.assertIn("Sources are displayed separately", system_prompt)
+
+    def test_remove_inline_source_labels_preserves_regular_brackets(self):
+        answer = remove_inline_source_labels(
+            "Treatment [S1][S2] can take 30 minutes [depending on the area]."
+        )
+
+        self.assertEqual(
+            "Treatment can take 30 minutes [depending on the area].",
+            answer,
+        )
 
 
 if __name__ == "__main__":

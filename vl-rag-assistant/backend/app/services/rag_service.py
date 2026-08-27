@@ -1,4 +1,5 @@
 import logging
+import re
 
 from openai import OpenAI
 
@@ -18,6 +19,20 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRIEVAL_CHARS_PER_MESSAGE = 800
 MAX_RETRIEVAL_HISTORY_CHARS = 24000
+INLINE_SOURCE_LABEL_PATTERN = re.compile(
+    r"\[(?:S\d+\s*(?:[,;]\s*S\d+\s*)*)\]",
+    re.IGNORECASE,
+)
+
+
+def remove_inline_source_labels(answer: str) -> str:
+    """Remove internal source IDs from user-facing answer text."""
+    answer = INLINE_SOURCE_LABEL_PATTERN.sub("", answer)
+    answer = re.sub(r"[ \t]+([,.;:!?])", r"\1", answer)
+    answer = re.sub(r"[ \t]{2,}", " ", answer)
+    answer = re.sub(r"[ \t]+\n", "\n", answer)
+
+    return answer.strip()
 
 
 def create_query_embedding(query: str) -> list[float]:
@@ -221,7 +236,7 @@ Rules:
 - Support factual clinic claims with the authoritative clinic policies or the website context supplied for the current question.
 - If a follow-up reference is still ambiguous, ask a concise clarifying question instead of guessing.
 - Keep answers clear, friendly, and concise.
-- Include source labels like [S1] or [S2] when using information from a source.
+- Do not include source IDs or inline citation markers such as [S1] or [S2] in the answer. Sources are displayed separately after the answer.
 
 Authoritative clinic policies:
 {BOOKING_POLICY}
@@ -260,7 +275,9 @@ Answer the user's question using the authoritative clinic policies and website c
         temperature=0.2,
     )
 
-    return response.choices[0].message.content.strip()
+    return remove_inline_source_labels(
+        response.choices[0].message.content
+    )
 
 
 def answer_question(
