@@ -1,3 +1,5 @@
+<meta charset="UTF-8" />
+
 <!-- Vancouver Laser AI Assistant Widget -->
 <div id="vl-ai-widget">
   <!-- Floating Button -->
@@ -365,8 +367,12 @@
 
 <script>
   (function () {
-    const API_URL =
-      "https://vl-rag-api.kindmeadow-d51e6351.westus2.azurecontainerapps.io/chat";
+    const IS_LOCAL_TEST =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+    const API_URL = IS_LOCAL_TEST
+      ? "http://127.0.0.1:8000/chat"
+      : "https://vl-rag-api.kindmeadow-d51e6351.westus2.azurecontainerapps.io/chat";
     const REQUEST_TIMEOUT_MS = 45000;
     const SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
     const MAX_HISTORY_MESSAGES = 60;
