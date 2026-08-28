@@ -50,6 +50,47 @@ ENABLE_DIAGNOSTIC_ENDPOINTS = os.getenv(
     "false" if IS_PRODUCTION else "true",
 ).strip().lower() in {"1", "true", "yes", "on"}
 
+CHAT_RATE_LIMIT_ENABLED = os.getenv(
+    "CHAT_RATE_LIMIT_ENABLED",
+    "true",
+).strip().lower() in {"1", "true", "yes", "on"}
+
+# Generous public-chat defaults. These can be tuned without changing code.
+CHAT_VISITOR_BURST_REQUESTS = int(
+    os.getenv("CHAT_VISITOR_BURST_REQUESTS", "5")
+)
+CHAT_VISITOR_BURST_WINDOW_SECONDS = int(
+    os.getenv("CHAT_VISITOR_BURST_WINDOW_SECONDS", "30")
+)
+CHAT_VISITOR_SUSTAINED_REQUESTS = int(
+    os.getenv("CHAT_VISITOR_SUSTAINED_REQUESTS", "20")
+)
+CHAT_VISITOR_SUSTAINED_WINDOW_SECONDS = int(
+    os.getenv("CHAT_VISITOR_SUSTAINED_WINDOW_SECONDS", "600")
+)
+CHAT_VISITOR_DAILY_REQUESTS = int(
+    os.getenv("CHAT_VISITOR_DAILY_REQUESTS", "100")
+)
+CHAT_VISITOR_DAILY_WINDOW_SECONDS = int(
+    os.getenv("CHAT_VISITOR_DAILY_WINDOW_SECONDS", "86400")
+)
+CHAT_IP_SUSTAINED_REQUESTS = int(
+    os.getenv("CHAT_IP_SUSTAINED_REQUESTS", "300")
+)
+CHAT_IP_SUSTAINED_WINDOW_SECONDS = int(
+    os.getenv("CHAT_IP_SUSTAINED_WINDOW_SECONDS", "600")
+)
+CHAT_IP_DAILY_REQUESTS = int(
+    os.getenv("CHAT_IP_DAILY_REQUESTS", "2000")
+)
+CHAT_IP_DAILY_WINDOW_SECONDS = int(
+    os.getenv("CHAT_IP_DAILY_WINDOW_SECONDS", "86400")
+)
+TRUST_X_FORWARDED_FOR = os.getenv(
+    "TRUST_X_FORWARDED_FOR",
+    "true" if IS_PRODUCTION else "false",
+).strip().lower() in {"1", "true", "yes", "on"}
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")

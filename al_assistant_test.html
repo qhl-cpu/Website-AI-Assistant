@@ -1456,6 +1456,7 @@
     let shouldAnnounceExpiredSession = false;
     let sessionId = getOrCreateSessionId();
     let records = loadRecords();
+    let rateLimitTimerId = null;
     const deviceInfo = collectDeviceInfo();
 
     testerNameInput.value =
@@ -1547,7 +1548,7 @@
       announceExpiredTestingSessionIfNeeded();
       touchTestingSession();
 
-      addUserMessage(question);
+      const userMessageElement = addUserMessage(question);
 
       chatInput.value = "";
       chatInput.style.height = "auto";
@@ -1559,6 +1560,7 @@
       const timeoutId = window.setTimeout(function () {
         controller.abort();
       }, REQUEST_TIMEOUT_MS);
+      let rateLimitRetrySeconds = 0;
 
       try {
         const response = await fetch(API_URL, {
@@ -1583,6 +1585,17 @@
         }
 
         if (!response.ok) {
+          if (response.status === 429) {
+            rateLimitRetrySeconds = getRetryAfterSeconds(response, data);
+            userMessageElement.remove();
+            chatInput.value = question;
+
+            replaceTypingIndicator(typingMessage, function () {
+              addStatusMessage(getErrorMessage(data));
+            });
+            return;
+          }
+
           const errorRecord = createRecord(
             question,
             "Sorry, something went wrong:\n" + getErrorMessage(data),
@@ -1631,8 +1644,13 @@
         });
       } finally {
         window.clearTimeout(timeoutId);
-        setInputState(true);
-        focusChatInputWithoutScrolling();
+
+        if (rateLimitRetrySeconds > 0) {
+          startRateLimitCooldown(rateLimitRetrySeconds);
+        } else {
+          setInputState(true);
+          focusChatInputWithoutScrolling();
+        }
       }
     });
 
@@ -1653,6 +1671,21 @@
       message.appendChild(bubble);
       messages.appendChild(message);
 
+      scrollToBottom();
+
+      return message;
+    }
+
+    function addStatusMessage(text) {
+      const message = document.createElement("div");
+      message.className = "vl-test-message vl-test-message-bot";
+
+      const bubble = document.createElement("div");
+      bubble.className = "vl-test-bubble";
+      bubble.textContent = text;
+
+      message.appendChild(bubble);
+      messages.appendChild(message);
       scrollToBottom();
     }
 
@@ -2072,6 +2105,62 @@
     function setInputState(enabled) {
       chatInput.disabled = !enabled;
       sendButton.disabled = !enabled;
+    }
+
+    function getRetryAfterSeconds(response, data) {
+      const bodyValue = Number(data && data.retry_after_seconds);
+      const headerValue = Number(response.headers.get("Retry-After"));
+      const retryAfter = Number.isFinite(bodyValue) && bodyValue > 0
+        ? bodyValue
+        : headerValue;
+
+      return Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.ceil(retryAfter)
+        : 10;
+    }
+
+    function formatRetryTime(seconds) {
+      if (seconds < 60) {
+        return seconds + "s";
+      }
+
+      if (seconds < 3600) {
+        return Math.ceil(seconds / 60) + "m";
+      }
+
+      return Math.ceil(seconds / 3600) + "h";
+    }
+
+    function startRateLimitCooldown(retryAfterSeconds) {
+      if (rateLimitTimerId !== null) {
+        window.clearInterval(rateLimitTimerId);
+      }
+
+      const deadline = Date.now() + retryAfterSeconds * 1000;
+      chatInput.disabled = false;
+      sendButton.disabled = true;
+
+      function updateCooldown() {
+        const remainingSeconds = Math.max(
+          0,
+          Math.ceil((deadline - Date.now()) / 1000)
+        );
+
+        if (remainingSeconds <= 0) {
+          window.clearInterval(rateLimitTimerId);
+          rateLimitTimerId = null;
+          sendButton.textContent = "Send";
+          sendButton.disabled = false;
+          focusChatInputWithoutScrolling();
+          return;
+        }
+
+        sendButton.textContent = "Try in " + formatRetryTime(remainingSeconds);
+      }
+
+      updateCooldown();
+      rateLimitTimerId = window.setInterval(updateCooldown, 1000);
+      focusChatInputWithoutScrolling();
     }
 
     function scrollToBottom() {

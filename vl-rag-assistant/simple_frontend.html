@@ -388,6 +388,7 @@
     const panel = document.getElementById("vl-ai-panel");
     const form = document.getElementById("vl-ai-form");
     const input = document.getElementById("vl-ai-input");
+    const sendButton = document.getElementById("vl-ai-send");
     const messages = document.getElementById("vl-ai-messages");
 
     const initialConversation = readConversationState();
@@ -397,6 +398,7 @@
     let conversationHistory = conversationState.history;
     let shouldAnnounceExpiredSession = initialConversation.expired;
     let conversationExpiryTimerId = null;
+    let rateLimitTimerId = null;
 
     if (!initialConversation.state) {
       saveConversationState();
@@ -451,7 +453,7 @@
       announceExpiredSessionIfNeeded();
       touchConversation();
 
-      addMessage("user", userMessage);
+      const userMessageElement = addMessage("user", userMessage);
       input.value = "";
 
       setInputState(false);
@@ -461,6 +463,7 @@
       const timeoutId = setTimeout(function () {
         controller.abort();
       }, REQUEST_TIMEOUT_MS);
+      let rateLimitRetrySeconds = 0;
 
       try {
         const response = await fetch(API_URL, {
@@ -479,6 +482,17 @@
         const data = await response.json();
 
         if (!response.ok) {
+          if (response.status === 429) {
+            rateLimitRetrySeconds = getRetryAfterSeconds(response, data);
+            userMessageElement.remove();
+            input.value = userMessage;
+
+            replaceTypingIndicator(typingElement, function () {
+              addMessage("bot", getErrorMessage(data), false);
+            });
+            return;
+          }
+
           const errorMessage = getErrorMessage(data);
           replaceTypingIndicator(typingElement, function () {
             addMessage(
@@ -514,8 +528,13 @@
         console.error(error);
       } finally {
         clearTimeout(timeoutId);
-        setInputState(true);
-        focusInputWithoutScrolling();
+
+        if (rateLimitRetrySeconds > 0) {
+          startRateLimitCooldown(rateLimitRetrySeconds);
+        } else {
+          setInputState(true);
+          focusInputWithoutScrolling();
+        }
       }
     });
 
@@ -634,7 +653,63 @@
 
     function setInputState(enabled) {
       input.disabled = !enabled;
-      document.getElementById("vl-ai-send").disabled = !enabled;
+      sendButton.disabled = !enabled;
+    }
+
+    function getRetryAfterSeconds(response, data) {
+      const bodyValue = Number(data && data.retry_after_seconds);
+      const headerValue = Number(response.headers.get("Retry-After"));
+      const retryAfter = Number.isFinite(bodyValue) && bodyValue > 0
+        ? bodyValue
+        : headerValue;
+
+      return Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.ceil(retryAfter)
+        : 10;
+    }
+
+    function formatRetryTime(seconds) {
+      if (seconds < 60) {
+        return seconds + "s";
+      }
+
+      if (seconds < 3600) {
+        return Math.ceil(seconds / 60) + "m";
+      }
+
+      return Math.ceil(seconds / 3600) + "h";
+    }
+
+    function startRateLimitCooldown(retryAfterSeconds) {
+      if (rateLimitTimerId !== null) {
+        window.clearInterval(rateLimitTimerId);
+      }
+
+      const deadline = Date.now() + retryAfterSeconds * 1000;
+      input.disabled = false;
+      sendButton.disabled = true;
+
+      function updateCooldown() {
+        const remainingSeconds = Math.max(
+          0,
+          Math.ceil((deadline - Date.now()) / 1000)
+        );
+
+        if (remainingSeconds <= 0) {
+          window.clearInterval(rateLimitTimerId);
+          rateLimitTimerId = null;
+          sendButton.textContent = "Send";
+          sendButton.disabled = false;
+          focusInputWithoutScrolling();
+          return;
+        }
+
+        sendButton.textContent = "Try in " + formatRetryTime(remainingSeconds);
+      }
+
+      updateCooldown();
+      rateLimitTimerId = window.setInterval(updateCooldown, 1000);
+      focusInputWithoutScrolling();
     }
 
     function scrollToBottom() {
