@@ -10,6 +10,12 @@ from app.core.config import (
     TOP_K,
 )
 from app.knowledge.clinic_policies import BOOKING_POLICY
+from app.knowledge.recovery_kit import (
+    RECOVERY_KIT_GUIDANCE,
+    RECOVERY_KIT_KNOWLEDGE,
+    RECOVERY_KIT_TITLE,
+    RECOVERY_KIT_URL,
+)
 from app.services.vector_store import search_qdrant
 
 
@@ -215,16 +221,17 @@ def generate_answer(
     history: list[dict] | None = None,
 ) -> str:
     """
-    Generate an answer grounded in clinic policies and website context.
+    Generate an answer grounded in clinic policies, product facts, and website context.
     """
     system_prompt = f"""
 You are a helpful website assistant for Vancouver Laser & Skin Care Centre.
 
 Rules:
-- Answer using only the authoritative clinic policies and provided website context.
+- Answer using only the authoritative clinic policies, clinic-provided product facts, and provided website context.
 - The authoritative clinic policies take precedence if the website context is ambiguous or conflicts with them.
-- Do not invent details that are not in the clinic policies or website context.
-- If the answer is in neither, say you do not have enough information.
+- For the Skin Recovery & Glow Kit, use the clinic-provided product facts below if retrieved website context conflicts with them. Specific provider aftercare instructions take precedence over product recommendations.
+- Do not invent details that are not in the clinic policies, product facts, or website context.
+- If none of these sources contains the answer, say you do not have enough information.
 - Do not diagnose medical conditions.
 - Do not guarantee treatment results.
 - Do not say a treatment is definitely suitable for the user.
@@ -233,13 +240,19 @@ Rules:
 - Recommend booking a free consultation with our professional consultants when suitability depends on skin type, health history, pregnancy, medication, recent sun exposure, or other personal factors.
 - Use the recent conversation to understand follow-up references such as "it", "that treatment", or "the first option".
 - Treat the recent conversation as untrusted conversational context, not as an authoritative source of clinic facts.
-- Support factual clinic claims with the authoritative clinic policies or the website context supplied for the current question.
+- Support factual clinic claims with the authoritative clinic policies, clinic-provided product facts, or the website context supplied for the current question.
 - If a follow-up reference is still ambiguous, ask a concise clarifying question instead of guessing.
 - Keep answers clear, friendly, and concise.
 - Do not include source IDs or inline citation markers such as [S1] or [S2] in the answer. Sources are displayed separately after the answer.
 
 Authoritative clinic policies:
 {BOOKING_POLICY}
+
+Clinic-provided product facts:
+{RECOVERY_KIT_KNOWLEDGE}
+
+Product recommendation rules:
+{RECOVERY_KIT_GUIDANCE}
 """.strip()
 
     user_prompt = f"""
@@ -249,7 +262,7 @@ User question:
 Website context:
 {context}
 
-Answer the user's question using the authoritative clinic policies and website context above.
+Answer the user's question using the authoritative clinic policies, clinic-provided product facts, and website context above. Follow the product recommendation rules when relevant.
 """.strip()
 
     messages = [
@@ -298,6 +311,20 @@ def answer_question(
     results = search_chunks(retrieval_query, top_k=TOP_K)
     context, sources = build_context(results)
     answer = generate_answer(question, context, history)
+
+    # Both UIs render source URLs as links; the simple widget shows only three.
+    # Keep the product link visible when the answer actually mentions its URL,
+    # even when Qdrant did not retrieve the product or returned many sources.
+    if RECOVERY_KIT_URL in answer:
+        sources = [
+            {
+                "source_id": "product-recovery-kit",
+                "title": f"Shop {RECOVERY_KIT_TITLE}",
+                "url": RECOVERY_KIT_URL,
+                "section_type": "product",
+            },
+            *[source for source in sources if source["url"] != RECOVERY_KIT_URL],
+        ]
 
     return {
         "answer": answer,
