@@ -1,0 +1,136 @@
+name: Deploy backend to Azure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "vl-rag-assistant/backend/**"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: azure-backend-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ACR_NAME: vlragregistry20261104
+      ACR_LOGIN_SERVER: vlragregistry20261104.azurecr.io
+      RESOURCE_GROUP: vl-rag-rg
+      CONTAINER_APP_NAME: vancouver-laser-api
+      IMAGE_URI: vlragregistry20261104.azurecr.io/vancouver-laser-api:git-${{ github.sha }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check Azure configuration
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          for variable in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID; do
+            if [[ -z "${!variable}" ]]; then
+              printf '::error::Missing repository Actions secret: %s\n' "$variable"
+              exit 1
+            fi
+          done
+
+      # Build on the GitHub runner; this does not use restricted ACR Tasks.
+      - name: Build Linux image
+        run: docker build --platform linux/amd64 --tag "$IMAGE_URI" ./vl-rag-assistant/backend
+
+      - name: Test the built image without live API calls
+        run: |
+          docker run --rm \
+            -e APP_ENV=development \
+            -e OPENAI_API_KEY=ci-placeholder \
+            -e QDRANT_URL=https://example.invalid:6333 \
+            -e QDRANT_API_KEY=ci-placeholder \
+            -e QDRANT_COLLECTION_NAME=ci-tests \
+            "$IMAGE_URI" python -m unittest discover -s tests -v
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign in to the container registry
+        run: az acr login --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP"
+
+      - name: Push the tested image
+        run: docker push "$IMAGE_URI"
+
+      - name: Deploy a new Container App revision
+        run: |
+          az extension add --name containerapp --upgrade --only-show-errors
+          revision_mode=$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.activeRevisionsMode --output tsv)
+          if [[ "$revision_mode" != "Single" ]]; then
+            printf '::error::This workflow expects Single revision mode; review traffic routing before deploying.\n'
+            exit 1
+          fi
+          az containerapp update \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$IMAGE_URI" \
+            --output none
+          revision=$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestRevisionName --output tsv)
+          for attempt in {1..30}; do
+            ready_revision=$(az containerapp show \
+              --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query properties.latestReadyRevisionName --output tsv)
+            if [[ "$ready_revision" == "$revision" ]]; then
+              break
+            fi
+            if [[ "$attempt" == 30 ]]; then
+              printf '::error::Revision %s did not become ready.\n' "$revision"
+              exit 1
+            fi
+            sleep 10
+          done
+          printf 'AZURE_DEPLOYED_REVISION=%s\n' "$revision" >> "$GITHUB_ENV"
+
+      - name: Verify the public health and Qdrant readiness endpoints
+        run: |
+          fqdn=$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn --output tsv)
+          if [[ -z "$fqdn" ]]; then
+            printf '::error::The Container App has no ingress URL.\n'
+            exit 1
+          fi
+          for endpoint in health ready; do
+            curl --fail --silent --show-error \
+              --connect-timeout 10 --max-time 35 \
+              --retry 5 --retry-delay 10 --retry-all-errors \
+              "https://$fqdn/$endpoint"
+            printf '\n'
+          done
+          printf '### Azure backend deployment\n\n- Image: `%s`\n- Revision: `%s`\n- URL: https://%s\n- Health and Qdrant readiness checks passed.\n' \
+            "$IMAGE_URI" "$AZURE_DEPLOYED_REVISION" "$fqdn" >> "$GITHUB_STEP_SUMMARY"

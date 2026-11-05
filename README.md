@@ -14,6 +14,14 @@ Search specific pages by title: python scripts/search_jsonl.py title
 
 Scraped markdown review file: python scripts/export_review_markdown.py
 
+## Deploy the backend automatically
+
+The GitHub Actions workflow in `.github/workflows/deploy-backend.yml` builds and
+tests backend changes pushed to `main`, pushes the image to ACR, and updates the
+existing Azure Container App. It builds on GitHub's runner and does not use ACR
+Tasks. Complete the one-time OIDC identity and GitHub secret setup in
+[the deployment guide](docs/azure-github-actions.md) before pushing the workflow.
+
 ## Test the chat widget on WordPress
 
 The embeddable widget is in `vl-rag-assistant/simple_frontend.html`. On a
