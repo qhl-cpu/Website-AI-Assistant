@@ -14,6 +14,48 @@ Search specific pages by title: python scripts/search_jsonl.py title
 
 Scraped markdown review file: python scripts/export_review_markdown.py
 
+## Refresh website knowledge
+
+The backend environment needs the ingestion dependencies as well as the API
+dependencies. From the repository root, install them into the same interpreter
+used for the sync command:
+
+```sh
+cd vl-rag-assistant
+backend/.venv/bin/python -m pip install -r requirements.txt
+```
+
+Keep the WordPress credentials (`WP_BASE_URL`, `WP_USERNAME`, `WP_APP_PASSWORD`)
+and `OPENAI_API_KEY` in the project's local `.env`. The uploader also needs the
+configured `QDRANT_URL`, `QDRANT_API_KEY`, and `QDRANT_COLLECTION_NAME` in its
+environment or local `.env` configuration.
+
+Run the full refresh, including uploading to Qdrant:
+
+```sh
+backend/.venv/bin/python scripts/sync_knowledge.py --upload
+```
+
+This fetches WordPress content and generates embeddings using the OpenAI API
+(billed usage). It is a full rebuild, not an incremental sync. The runner checks
+all required imports before starting, stops on any failing command, and requires
+each preprocessing stage to produce a fresh, nonempty output file. It cannot
+fall through to embedding/uploading a stale file after an earlier stage fails.
+It runs each script with the same Python interpreter and correct working
+directory. Without `--upload`, it prepares the embeddings locally but does not
+upload them to Qdrant.
+
+Qdrant uploads update matching point IDs but do not delete obsolete chunks or
+expired campaign content. A successful upload of 1,332 points alone does not
+prove the latest homepage was fetched; inspect the new crawl/cleaning output and
+test the updated campaign facts in a new chat after syncing.
+
+Local pipeline regression checks (no real WordPress, OpenAI, or Qdrant calls):
+
+```sh
+backend/.venv/bin/python -m unittest discover -s scripts/tests -v
+```
+
 ## Deploy the backend automatically
 
 The GitHub Actions workflow in `.github/workflows/deploy-backend.yml` builds and

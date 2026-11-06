@@ -37,7 +37,7 @@ Pygments==2.20.0
 python-dotenv==1.2.2
 python-multipart==0.0.32
 PyYAML==6.0.3
-qdrant-client==1.18.0
+qdrant-client==1.20.0
 rich==15.0.0
 rich-toolkit==0.20.1
 rignore==0.7.6
