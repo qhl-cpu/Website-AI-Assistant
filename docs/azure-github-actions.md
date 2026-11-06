@@ -143,3 +143,4 @@ knowledge ingestion remain separate update processes.
 - [Federated credentials for managed identities](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation-create-trust-user-assigned-managed-identity)
 - [ACR roles and permission modes](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-rbac-built-in-roles-overview)
 - [Container Apps revisions](https://learn.microsoft.com/en-us/azure/container-apps/revisions)
+
