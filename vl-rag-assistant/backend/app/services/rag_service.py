@@ -16,7 +16,7 @@ from app.knowledge.recovery_kit import (
     RECOVERY_KIT_TITLE,
     RECOVERY_KIT_URL,
 )
-from app.services.vector_store import search_qdrant
+from app.services.vector_store import is_eleven_eleven_campaign, search_qdrant
 
 
 client = OpenAI()
@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRIEVAL_CHARS_PER_MESSAGE = 800
 MAX_RETRIEVAL_HISTORY_CHARS = 24000
+MIN_ELEVEN_ELEVEN_CONTEXT_CHARS = 4000
 INLINE_SOURCE_LABEL_PATTERN = re.compile(
     r"\[(?:S\d+\s*(?:[,;]\s*S\d+\s*)*)\]",
     re.IGNORECASE,
@@ -104,8 +105,13 @@ def build_context(results: list[dict]) -> tuple[str, list[dict]]:
                     }
                 )
 
-        if len(text) > MAX_CONTEXT_CHARS_PER_CHUNK:
-            text = text[:MAX_CONTEXT_CHARS_PER_CHUNK] + "..."
+        context_limit = MAX_CONTEXT_CHARS_PER_CHUNK
+        if is_eleven_eleven_campaign(chunk):
+            # Keep 11/11 offer lists intact without increasing the allowance
+            # for unrelated campaigns or ordinary treatment pages.
+            context_limit = max(context_limit, MIN_ELEVEN_ELEVEN_CONTEXT_CHARS)
+        if len(text) > context_limit:
+            text = text[:context_limit] + "..."
 
         context_part = (
             f"[{source_id}]\n"
@@ -243,6 +249,8 @@ Rules:
 - Support factual clinic claims with the authoritative clinic policies, clinic-provided product facts, or the website context supplied for the current question.
 - If a follow-up reference is still ambiguous, ask a concise clarifying question instead of guessing.
 - Keep answers clear, friendly, and concise.
+- When asked which treatments are discounted or included in an event, list every treatment named in the relevant campaign context, rather than choosing a few examples. Do not claim the list is exhaustive if the context is incomplete.
+- Keep public discounts, member/pass-holder discounts, and daily featured offers separate. Attach each percentage to its stated eligibility and timing; an "up to" headline or Daily Drop discount does not apply to every treatment or customer.
 - Do not include source IDs or inline citation markers such as [S1] or [S2] in the answer. Sources are displayed separately after the answer.
 
 Authoritative clinic policies:

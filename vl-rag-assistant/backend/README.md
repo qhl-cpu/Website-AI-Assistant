@@ -43,6 +43,34 @@ After deployment, evaluate real model answers with these prompts:
 | Do I need a protective face mask at the clinic? | Do not confuse a protective mask with skincare masks. |
 | My skin is blistering after treatment. What should I do? | Prioritize contacting the treating provider without an unsolicited sales recommendation. |
 
+## Campaign offer coverage
+
+When vector search finds an 11/11 page, retrieval also reads published/manual
+sibling chunks from that document (up to 16 chunks per page, for at most two
+11/11 documents). Identification uses the `pages-11-11-event` document ID or an
+`11-11` / `11/11` marker in the title, never the homepage URL alone. Other
+campaigns and ordinary pages keep their original retrieval behavior.
+This keeps treatment lists and discount
+eligibility together even when only one part of the page ranks in the top hits.
+If that additional read fails, the original search results remain available.
+
+`MAX_CONTEXT_CHARS_PER_CHUNK` keeps its original default of `1200`. Only 11/11
+chunks use a minimum allowance of 4000 characters, enough to retain the four
+existing 11/11 chunks intact. This changes the text passed to the model, not
+the 500-token ingestion chunk size, and requires no re-embedding. The answer
+instructions request all treatments found in campaign context and distinguish
+public, member/pass-holder, and Daily Drop rates. Campaign details continue to
+come from indexed website content, so changes require refreshing knowledge;
+these backend changes require deployment to affect the hosted assistant.
+
+Run backend regression checks locally without calling external services:
+
+```sh
+cd vl-rag-assistant/backend
+OPENAI_API_KEY=test QDRANT_URL=http://localhost:6333 QDRANT_API_KEY=test \
+QDRANT_COLLECTION_NAME=test .venv/bin/python -m unittest discover -s tests -v
+```
+
 ## Conversation context
 
 The `/chat` endpoint accepts completed conversation turns in `history`. Send the
