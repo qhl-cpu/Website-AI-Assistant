@@ -583,10 +583,7 @@
 
       const bubble = document.createElement("div");
       bubble.className = "vl-ai-bubble";
-
-      const answerText = document.createElement("div");
-      answerText.textContent = answer;
-      bubble.appendChild(answerText);
+      bubble.textContent = answer;
 
       if (Array.isArray(data.sources) && data.sources.length > 0) {
         const sourcesBox = document.createElement("div");
