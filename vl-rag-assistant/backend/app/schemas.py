@@ -83,6 +83,13 @@ class Source(BaseModel):
     score: Optional[float] = None
 
 
+class InlineLink(BaseModel):
+    # Start (inclusive) and end (exclusive) as Unicode code point offsets in answer.
+    start: int
+    end: int
+    url: str
+
+
 # Response body for the /chat endpoint.
 # The backend returns this after generating an answer.
 class ChatResponse(BaseModel):
@@ -91,6 +98,8 @@ class ChatResponse(BaseModel):
 
     # List of sources used to support the answer.
     sources: List[Source]
+
+    inline_links: List[InlineLink] = Field(default_factory=list)
 
 
 # Request body for the /search endpoint.

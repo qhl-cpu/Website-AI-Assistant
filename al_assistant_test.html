@@ -964,6 +964,12 @@
     text-decoration: none;
   }
 
+  .vl-test-bubble .vl-test-inline-link {
+    color: var(--vl-gold-deep);
+    font-size: inherit;
+    text-decoration: underline;
+  }
+
   /* FEEDBACK */
 
   .vl-test-answer-feedback {
@@ -1624,7 +1630,7 @@
         );
 
         replaceTypingIndicator(typingMessage, function () {
-          addBotMessage(record, false);
+          addBotMessage(record, false, data && data.inline_links);
         });
       } catch (error) {
         const errorMessage =
@@ -1689,7 +1695,20 @@
       scrollToBottom();
     }
 
-    function addBotMessage(record, shouldScroll) {
+    /**
+     * Render a recorded assistant reply with page links, sources, and feedback.
+     *
+     * Requires a record from createRecord() or a compatible stored record with
+     * normalized sources and an initialized testing UI. Appends the message and
+     * feedback controls to the chat log, then scrolls unless explicitly disabled.
+     *
+     * @param {Object} record - Exchange record containing the answer and sources.
+     * @param {boolean} [shouldScroll=true] - Scroll to the bottom after rendering.
+     * @param {Array<{start: number, end: number, url: string}>} [inlineLinks]
+     *   - Ordered Unicode code point ranges in record.assistant_response.
+     * @returns {void}
+     */
+    function addBotMessage(record, shouldScroll, inlineLinks) {
       const message = document.createElement("div");
       message.className = "vl-test-message vl-test-message-bot";
 
@@ -1700,7 +1719,7 @@
       bubble.className = "vl-test-bubble";
 
       const answer = document.createElement("div");
-      answer.textContent = record.assistant_response;
+      appendLinkedAnswer(answer, record.assistant_response, inlineLinks);
       bubble.appendChild(answer);
 
       if (record.sources.length > 0) {
@@ -1734,6 +1753,53 @@
       if (shouldScroll !== false) {
         scrollToBottom();
       }
+    }
+
+    /**
+     * Render plain answer text and turn recognized ranges into inline links.
+     *
+     * Requires an empty target element, the exact API answer, and link entries
+     * supplied as objects in ascending, non-overlapping order. Positions count
+     * Unicode code points, with start inclusive and end exclusive. Invalid
+     * ranges or URLs are skipped. A missing or empty link list renders plain text.
+     * Appends text nodes and anchors whose destinations open in a new tab.
+     *
+     * @param {HTMLElement} container - Empty element that receives the answer.
+     * @param {string} answer - Original answer used to calculate link positions.
+     * @param {Array<{start: number, end: number, url: string}>} [inlineLinks]
+     *   - Ranges and destinations supplied by the chat API.
+     * @returns {void}
+     */
+    function appendLinkedAnswer(container, answer, inlineLinks) {
+      if (!Array.isArray(inlineLinks) || inlineLinks.length === 0) {
+        container.textContent = answer;
+        return;
+      }
+
+      // The API counts Unicode code points, including emoji as one character.
+      const characters = Array.from(answer);
+      let offset = 0;
+      for (const { start, end, url } of inlineLinks) {
+        if (!Number.isInteger(start) || !Number.isInteger(end) ||
+            start < offset || end <= start || end > characters.length) {
+          continue;
+        }
+
+        const href = getSafeUrl(url);
+        if (!href) {
+          continue;
+        }
+
+        const link = document.createElement("a");
+        link.className = "vl-test-inline-link";
+        link.textContent = characters.slice(start, end).join("");
+        link.href = href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        container.append(characters.slice(offset, start).join(""), link);
+        offset = end;
+      }
+      container.append(characters.slice(offset).join(""));
     }
 
     function createFeedbackPanel(record) {
@@ -2072,6 +2138,15 @@
         .slice(0, 5);
     }
 
+    /**
+     * Parse a source or inline-link destination and allow HTTP or HTTPS URLs.
+     *
+     * Requires an absolute URL when a value is supplied. Inline website hosts
+     * are checked by the backend. Parsing failures return null to the caller.
+     *
+     * @param {string} [value] - Destination URL to validate and normalize.
+     * @returns {string|null} Normalized URL, or null for missing or rejected input.
+     */
     function getSafeUrl(value) {
       if (!value) {
         return null;

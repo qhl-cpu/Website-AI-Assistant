@@ -181,8 +181,25 @@ def search(request: SearchRequest):
     responses={429: {"description": "Chat rate limit exceeded."}},
 )
 def chat(request: ChatRequest, http_request: Request):
-    """
-    Main endpoint used by the website chat widget.
+    """Handle a validated chat request and enforce visitor and IP limits.
+
+    Args:
+        request: ChatRequest validated by FastAPI, including a question,
+            optional session ID, and bounded conversation history.
+        http_request: HTTP request used to resolve the visitor's client IP.
+
+    Returns:
+        ChatResponse containing answer text, sources, and inline links. Returns
+        a JSONResponse with status 429 and retry timing when a limit is reached.
+
+    Raises:
+        HTTPException: Status 500 when answer generation or response validation
+            fails inside the endpoint's error handler.
+
+    Notes:
+        Requires configured model and vector services for accepted requests.
+        Updates the in-memory rate limiter, calls the answer service, and logs
+        failures before returning the public error message.
     """
     client_ip = get_client_ip(http_request)
     visitor_id = f"{client_ip}:{request.session_id or 'anonymous'}"
@@ -215,10 +232,7 @@ def chat(request: ChatRequest, http_request: Request):
         history = [message.model_dump() for message in request.history]
         result = answer_question(request.message, history=history)
 
-        return ChatResponse(
-            answer=result["answer"],
-            sources=result["sources"],
-        )
+        return ChatResponse(**result)
 
     except Exception:
         logger.exception("Chat request failed")

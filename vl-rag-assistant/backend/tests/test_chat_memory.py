@@ -54,6 +54,7 @@ class ChatMemoryTests(unittest.TestCase):
         self.assertIn("Tell me about Sofwave.", query)
         self.assertIn("How much does it cost?", query)
 
+    @patch("app.services.site_links.load_page_link_index", return_value={})
     @patch("app.services.rag_service.generate_answer")
     @patch("app.services.rag_service.build_context")
     @patch("app.services.rag_service.search_chunks")
@@ -64,6 +65,7 @@ class ChatMemoryTests(unittest.TestCase):
         search_chunks_mock,
         build_context_mock,
         generate_answer_mock,
+        _page_link_index_mock,
     ):
         history = [
             {"role": "user", "content": "What is IPL?"},

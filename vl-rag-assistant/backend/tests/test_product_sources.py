@@ -15,6 +15,7 @@ class ProductSourceTests(unittest.TestCase):
             ),
             patch("app.services.rag_service.search_chunks", return_value=results),
             patch("app.services.rag_service.generate_answer", return_value=answer),
+            patch("app.services.site_links.load_page_link_index", return_value={}),
         ):
             return ChatResponse(**answer_question("What should I use afterwards?"))
 

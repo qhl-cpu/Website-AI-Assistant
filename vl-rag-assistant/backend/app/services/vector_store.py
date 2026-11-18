@@ -1,5 +1,6 @@
 import logging
 import re
+from collections.abc import Iterator
 from functools import lru_cache
 
 from qdrant_client import QdrantClient, models
@@ -26,14 +27,61 @@ def is_eleven_eleven_campaign(chunk: dict) -> bool:
 
 @lru_cache(maxsize=1)
 def get_qdrant_client() -> QdrantClient:
-    """
-    Create one reusable Qdrant client for the application process.
+    """Create a reusable Qdrant client for the application process.
+
+    Returns:
+        A process-cached client configured with a 30-second request timeout.
+
+    Notes:
+        Requires QDRANT_URL and QDRANT_API_KEY from application configuration.
+        Client initialization may perform compatibility checks. Subsequent
+        operations require access to the configured Qdrant collection.
     """
     return QdrantClient(
         url=QDRANT_URL,
         api_key=QDRANT_API_KEY,
         timeout=30,
     )
+
+
+def iter_published_page_chunks() -> Iterator[dict]:
+    """Yield published chunks containing page titles and overview aliases.
+
+    Yields:
+        Chunk payloads containing status, title, url, section_type, and text.
+        Matches each page's first chunk or overview chunks, so multiple
+        payloads can belong to the same page.
+
+    Notes:
+        Requires a reachable, configured Qdrant collection with status,
+        chunk_index, and section_type payload fields. Iteration performs
+        synchronous reads in batches of 256 with a two-second timeout per
+        request. Client and request failures propagate during iteration.
+    """
+    client = get_qdrant_client()
+    offset = None
+    while True:
+        points, offset = client.scroll(
+            collection_name=QDRANT_COLLECTION_NAME,
+            scroll_filter=models.Filter(
+                must=[
+                    models.FieldCondition(key="status", match=models.MatchValue(value="publish")),
+                ],
+                should=[
+                    models.FieldCondition(key="chunk_index", match=models.MatchValue(value=0)),
+                    models.FieldCondition(key="section_type", match=models.MatchValue(value="overview")),
+                ],
+            ),
+            limit=256,
+            offset=offset,
+            with_payload=["status", "title", "url", "section_type", "text"],
+            with_vectors=False,
+            timeout=2,
+        )
+        for point in points:
+            yield point.payload or {}
+        if offset is None:
+            break
 
 
 def search_qdrant(

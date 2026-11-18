@@ -16,6 +16,7 @@ from app.knowledge.recovery_kit import (
     RECOVERY_KIT_TITLE,
     RECOVERY_KIT_URL,
 )
+from app.services.site_links import find_inline_links
 from app.services.vector_store import is_eleven_eleven_campaign, search_qdrant
 
 
@@ -252,6 +253,7 @@ Rules:
 - When asked which treatments are discounted or included in an event, list every treatment named in the relevant campaign context, rather than choosing a few examples. Do not claim the list is exhaustive if the context is incomplete.
 - Keep public discounts, member/pass-holder discounts, and daily featured offers separate. Attach each percentage to its stated eligibility and timing; an "up to" headline or Daily Drop discount does not apply to every treatment or customer.
 - Do not include source IDs or inline citation markers such as [S1] or [S2] in the answer. Sources are displayed separately after the answer.
+- Write page, treatment, and concern names as plain text. The widget links recognized names automatically.
 
 Authoritative clinic policies:
 {BOOKING_POLICY}
@@ -305,8 +307,23 @@ def answer_question(
     question: str,
     history: list[dict] | None = None,
 ) -> dict:
-    """
-    Main function used by the FastAPI /chat endpoint.
+    """Generate a grounded answer with supporting sources and inline links.
+
+    Args:
+        question: Validated, nonempty user question from the chat endpoint.
+        history: Optional completed user and assistant turns in chronological
+            order, subject to the request schema's role and size limits.
+
+    Returns:
+        A dictionary containing answer text, supporting sources, and
+        inline_links with Unicode code point ranges in that answer. The
+        recovery kit source is placed first when its URL appears in the answer.
+
+    Notes:
+        Requires configured OpenAI and Qdrant services. Makes embedding and
+        model requests and may refresh the page catalog. A failed query rewrite
+        uses conversation text as a fallback. Retrieval and answer-generation
+        failures propagate to the endpoint for error handling.
     """
     try:
         retrieval_query = create_contextualized_retrieval_query(
@@ -337,6 +354,7 @@ def answer_question(
     return {
         "answer": answer,
         "sources": sources,
+        "inline_links": find_inline_links(answer, (result["chunk"] for result in results)),
     }
 
 

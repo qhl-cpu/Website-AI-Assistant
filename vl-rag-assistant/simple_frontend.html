@@ -251,6 +251,12 @@
     text-decoration: underline;
   }
 
+  #vl-ai-widget .vl-ai-inline-link {
+    color: var(--vl-ai-gold-dark);
+    font-size: inherit;
+    text-decoration: underline;
+  }
+
   .vl-ai-typing {
     display: inline-flex;
     align-items: center;
@@ -575,6 +581,21 @@
       return message;
     }
 
+    /**
+     * Render an assistant reply with inline page links and up to three sources.
+     *
+     * Requires an API response object and an initialized messages container.
+     * Appends a bot message to the chat log and scrolls unless explicitly disabled.
+     * Uses fallback text when the answer is empty.
+     *
+     * @param {Object} data - Parsed chat API response.
+     * @param {string} [data.answer] - Assistant answer text.
+     * @param {Array<{title: string, url: string}>} [data.sources] - Supporting pages.
+     * @param {Array<{start: number, end: number, url: string}>} [data.inline_links]
+     *   - Ordered Unicode code point ranges in the exact answer text.
+     * @param {boolean} [shouldScroll=true] - Scroll to the bottom after rendering.
+     * @returns {void}
+     */
     function addBotResponse(data, shouldScroll) {
       const answer = data.answer || "I received your question, but no answer was returned.";
 
@@ -583,7 +604,7 @@
 
       const bubble = document.createElement("div");
       bubble.className = "vl-ai-bubble";
-      bubble.textContent = answer;
+      appendLinkedAnswer(bubble, String(answer), data.inline_links);
 
       if (Array.isArray(data.sources) && data.sources.length > 0) {
         const sourcesBox = document.createElement("div");
@@ -620,6 +641,53 @@
       if (shouldScroll !== false) {
         scrollToBottom();
       }
+    }
+
+    /**
+     * Render plain answer text and turn recognized ranges into inline links.
+     *
+     * Requires an empty target element, the exact API answer, and link entries
+     * supplied as objects in ascending, non-overlapping order. Positions count
+     * Unicode code points, with start inclusive and end exclusive. Invalid
+     * ranges or URLs are skipped. A missing or empty link list renders plain text.
+     * Appends text nodes and anchors whose destinations open in a new tab.
+     *
+     * @param {HTMLElement} container - Empty element that receives the answer.
+     * @param {string} answer - Original answer used to calculate link positions.
+     * @param {Array<{start: number, end: number, url: string}>} [inlineLinks]
+     *   - Ranges and destinations supplied by the chat API.
+     * @returns {void}
+     */
+    function appendLinkedAnswer(container, answer, inlineLinks) {
+      if (!Array.isArray(inlineLinks) || inlineLinks.length === 0) {
+        container.textContent = answer;
+        return;
+      }
+
+      // The API counts Unicode code points, including emoji as one character.
+      const characters = Array.from(answer);
+      let offset = 0;
+      for (const { start, end, url } of inlineLinks) {
+        if (!Number.isInteger(start) || !Number.isInteger(end) ||
+            start < offset || end <= start || end > characters.length) {
+          continue;
+        }
+
+        const href = getSafeSourceUrl(url);
+        if (!href) {
+          continue;
+        }
+
+        const link = document.createElement("a");
+        link.className = "vl-ai-inline-link";
+        link.textContent = characters.slice(start, end).join("");
+        link.href = href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        container.append(characters.slice(offset, start).join(""), link);
+        offset = end;
+      }
+      container.append(characters.slice(offset).join(""));
     }
 
     function addTypingIndicator() {
@@ -759,6 +827,15 @@
       return JSON.stringify(data, null, 2);
     }
 
+    /**
+     * Parse a source or inline-link destination and allow HTTP or HTTPS URLs.
+     *
+     * Requires an absolute URL when a value is supplied. Inline website hosts
+     * are checked by the backend. Parsing failures are logged to the console.
+     *
+     * @param {string} [value] - Destination URL to validate and normalize.
+     * @returns {string|null} Normalized URL, or null for missing or rejected input.
+     */
     function getSafeSourceUrl(value) {
       if (!value) {
         return null;
