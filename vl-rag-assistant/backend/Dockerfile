@@ -17,6 +17,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
+# Cache the public tokenizer vocabulary at build time for knowledge updates.
+ENV TIKTOKEN_CACHE_DIR=/app/tokenizer-cache
+RUN python -c "import tiktoken; tiktoken.get_encoding('cl100k_base')"
+
 # Copy the rest of the backend project into the container.
 COPY . .
 

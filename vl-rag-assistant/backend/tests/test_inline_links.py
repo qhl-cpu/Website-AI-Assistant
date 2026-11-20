@@ -84,6 +84,7 @@ class InlineLinkTests(unittest.TestCase):
         ):
             client = get_client.return_value
             client.scroll.side_effect = [
+                ([], None),  # No managed revisions.
                 ([SimpleNamespace(payload=item) for item in [acne, scars, sofwave]], "next"),
                 ([SimpleNamespace(payload=item) for item in remaining_pages], None),
             ]

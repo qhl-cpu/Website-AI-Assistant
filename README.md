@@ -16,6 +16,10 @@ Scraped markdown review file: python scripts/export_review_markdown.py
 
 ## Refresh website knowledge
 
+For routine updates to selected pages or uploaded files, use the
+[manual knowledge library](vl-rag-assistant/backend/README.md#manual-knowledge-library).
+The bulk rebuild below is for a separately managed collection.
+
 The backend environment needs the ingestion dependencies as well as the API
 dependencies. From the repository root, install them into the same interpreter
 used for the sync command:

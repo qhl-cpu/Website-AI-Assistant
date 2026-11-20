@@ -104,6 +104,11 @@ mocks and placeholder credentials.
 
 ## 3. Enable the workflow by committing and pushing it
 
+Before deploying the manual knowledge library, initialize the required Qdrant
+payload indexes on the collection used by Azure. See
+[the knowledge library setup](../vl-rag-assistant/backend/README.md#manual-knowledge-library).
+The workflow's `/ready` check verifies these indexes for strict collections.
+
 After completing the identity setup and GitHub secrets, commit and push the
 workflow to `main` yourself. Its first push will trigger deployment because the
 workflow file is included in its path filters. Until you push it, these local

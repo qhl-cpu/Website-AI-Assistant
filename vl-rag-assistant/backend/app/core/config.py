@@ -50,6 +50,8 @@ ENABLE_DIAGNOSTIC_ENDPOINTS = os.getenv(
     "false" if IS_PRODUCTION else "true",
 ).strip().lower() in {"1", "true", "yes", "on"}
 
+KNOWLEDGE_ADMIN_TOKEN = os.getenv("KNOWLEDGE_ADMIN_TOKEN", "").strip()
+
 CHAT_RATE_LIMIT_ENABLED = os.getenv(
     "CHAT_RATE_LIMIT_ENABLED",
     "true",

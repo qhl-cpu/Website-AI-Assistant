@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Knowledge library · Vancouver Laser</title>
+  <style nonce="__CSP_NONCE__">
+    :root {
+      color-scheme: light;
+      font-family: system-ui, sans-serif;
+      background: #f7f5f1;
+      color: #26241e;
+      --line: #ded9cd;
+      --muted: #635e52;
+      --accent: #4e4734;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; }
+    header { border-bottom: 1px solid var(--line); background: #fffdf8; }
+    .wrap { width: min(1120px, 94%); margin: auto; }
+    header .wrap { display: flex; justify-content: space-between; align-items: center; padding: 1rem 0; }
+    .brand { font-weight: 650; }
+    main { padding: 2.25rem 0 4rem; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: clamp(1.9rem, 6vw, 3rem); letter-spacing: -.045em; }
+    h2 { font-size: 1.12rem; }
+    p, .meta, small { color: var(--muted); }
+    h1 + p { margin-top: .35rem; }
+    .panel { border: 1px solid var(--line); border-radius: 14px; background: #fffdf8; padding: 1.15rem; }
+    .columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+    form, .controls, .actions, .inline { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+    .columns form { align-items: stretch; }
+    form h2, form p { flex-basis: 100%; }
+    label { font-weight: 550; }
+    input, button { font: inherit; }
+    input[type=url], input[type=search], input[type=password], input[type=file] {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: .55rem .65rem;
+      min-width: 0;
+      flex: 1;
+      color: inherit;
+      background: white;
+    }
+    input[type=checkbox] { accent-color: var(--accent); width: 1rem; height: 1rem; }
+    button {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: .55rem .75rem;
+      font-weight: 600;
+      color: inherit;
+      cursor: pointer;
+      background: white;
+    }
+    button.primary { color: white; border-color: var(--accent); background: var(--accent); }
+    button.danger { color: #943225; }
+    button:disabled { opacity: .5; cursor: default; }
+    button:not(:disabled):hover { box-shadow: inset 0 0 0 1px currentColor; }
+    #login { max-width: 560px; margin-top: 1.5rem; }
+    #library { margin-top: 1rem; padding: 0; overflow: hidden; }
+    .controls { padding: 1rem; justify-content: space-between; }
+    .table-scroll { overflow: auto; }
+    table { border-collapse: collapse; width: 100%; text-align: left; }
+    th, td { padding: .7rem .8rem; vertical-align: middle; border-top: 1px solid var(--line); }
+    th { font-size: .82rem; white-space: nowrap; background: #f1ede4; }
+    td:first-child, th:first-child { width: 3rem; text-align: center; }
+    td:nth-child(2) { min-width: 14rem; }
+    td:last-child { white-space: nowrap; }
+    .source-title { font-weight: 620; }
+    .meta { display: block; font-size: .82rem; overflow-wrap: anywhere; }
+    a { color: #50432a; }
+    #feedback { margin: .9rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #feedback.error { color: #8a2d22; }
+    #empty { padding: 1.3rem; }
+    #selected-count { font-variant-numeric: tabular-nums; }
+    dialog { width: min(32rem, 92vw); border: 1px solid var(--line); color: inherit; }
+    dialog::backdrop { background: #26241e66; }
+    dialog form > label { flex-basis: 100%; }
+    @media (max-width: 720px) {
+      .columns { grid-template-columns: minmax(0, 1fr); }
+      .columns input { flex-basis: 100%; }
+      main { padding-top: 1.4rem; }
+    }
+  </style>
+</head>
+<body>
+  <header><div class="wrap"><span class="brand">Vancouver Laser</span><button id="sign-out" hidden>Sign out</button></div></header>
+  <main class="wrap">
+    <h1>Knowledge library</h1>
+    <p>Manage the webpages and files used by the website assistant.</p>
+
+    <form id="login" class="panel">
+      <label for="token">Administrator access token</label>
+      <input id="token" type="password" autocomplete="off" required>
+      <button class="primary">Open library</button>
+    </form>
+
+    <div id="workspace" hidden>
+      <div class="columns">
+        <form class="panel" id="add-page">
+          <h2>Add webpage</h2>
+          <p>Paste a public Vancouver Laser page URL.</p>
+          <input id="page-url" type="url" aria-label="Webpage URL" placeholder="https://www.vancouverlaser.com/…" maxlength="2048" required>
+          <button class="primary">Add and index</button>
+        </form>
+        <form class="panel" id="add-file">
+          <h2>Upload file</h2>
+          <p>PDF, DOCX, TXT or Markdown. Up to 10 MB.</p>
+          <input id="new-file" type="file" aria-label="File to upload" accept=".pdf,.docx,.txt,.md,.markdown" required>
+          <button class="primary">Upload and index</button>
+        </form>
+      </div>
+      <section id="library" class="panel" aria-label="Indexed sources">
+        <div class="controls">
+          <input type="search" id="search" aria-label="Find sources" placeholder="Find by name or URL">
+          <div class="actions">
+            <span id="selected-count" class="meta">0 selected</span>
+            <button id="reload">Reload list</button>
+            <button id="refresh" class="primary">Update webpages</button>
+            <button id="remove" class="danger">Remove selected</button>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th><input id="select-all" type="checkbox" aria-label="Select all visible sources"></th>
+              <th scope="col">Source</th><th scope="col">Type</th><th scope="col">Last updated</th>
+              <th scope="col">Status</th><th scope="col">Action</th>
+            </tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <p id="empty" hidden>No sources to display.</p>
+      </section>
+    </div>
+
+    <p id="feedback" role="status" aria-live="polite"></p>
+
+    <dialog id="replace-dialog" class="panel" aria-labelledby="replace-title">
+      <form id="replace-file">
+        <h2 id="replace-title">Replace file</h2>
+        <p id="replace-name"></p>
+        <input id="replacement" type="file" aria-label="Replacement file" accept=".pdf,.docx,.txt,.md,.markdown" required>
+        <label><input id="replace-public" type="checkbox" required> This file may be used in public chat answers.</label>
+        <button class="primary">Replace and update</button>
+        <button type="button" id="cancel-replace">Cancel</button>
+      </form>
+    </dialog>
+  </main>
+
+  <script nonce="__CSP_NONCE__">
+    const byId = (id) => document.getElementById(id);
+    const base = "/admin/knowledge";
+    const selected = new Set();
+    const rows = byId("rows");
+    const dialog = byId("replace-dialog");
+    let sources = [];
+    let token = "";
+    let replacing = null;
+    let busy = false;
+
+    function feedback(message, error = false) {
+      const element = byId("feedback");
+      element.textContent = message;
+      element.classList.toggle("error", error);
+    }
+
+    function signOut() {
+      token = "";
+      sources = [];
+      selected.clear();
+      byId("workspace").hidden = true;
+      byId("sign-out").hidden = true;
+      byId("login").hidden = false;
+      byId("token").value = "";
+      byId("search").value = "";
+      byId("add-page").reset();
+      byId("add-file").reset();
+      byId("replace-file").reset();
+      byId("replace-name").textContent = "";
+      replacing = null;
+      dialog.close();
+      render();
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(base + path, {
+        ...options,
+        credentials: "omit",
+        cache: "no-store",
+        headers: {Authorization: "Bearer " + token, ...options.headers},
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401) signOut();
+      if (!response.ok) {
+        throw new Error(typeof data.detail === "string" ? data.detail : "The request failed. Reload the list before retrying.");
+      }
+      return data;
+    }
+
+    function visibleSources() {
+      const query = byId("search").value.trim().toLowerCase();
+      return sources.filter((item) => (item.title + " " + (item.url || "")).toLowerCase().includes(query));
+    }
+
+    function currentSelection() {
+      return sources.filter((item) => selected.has(item.id));
+    }
+
+    function cell(row, value) {
+      const element = row.insertCell();
+      element.textContent = value;
+      return element;
+    }
+
+    function render() {
+      rows.replaceChildren();
+      const visible = visibleSources();
+      const selection = currentSelection();
+      const selectAll = byId("select-all");
+      const visibleSelected = visible.filter((item) => selected.has(item.id)).length;
+      selectAll.checked = Boolean(visible.length && visibleSelected === visible.length);
+      selectAll.indeterminate = visibleSelected > 0 && visibleSelected < visible.length;
+      byId("selected-count").textContent = selection.length + " selected";
+      byId("empty").hidden = Boolean(visible.length);
+
+      for (const item of visible) {
+        const row = rows.insertRow();
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = selected.has(item.id);
+        checkbox.setAttribute("aria-label", "Select " + item.title);
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) selected.add(item.id);
+          else selected.delete(item.id);
+          updateControls();
+        });
+        cell(row, "").append(checkbox);
+        const name = document.createElement("span");
+        name.className = "source-title";
+        name.textContent = item.title;
+        const nameCell = cell(row, "");
+        nameCell.append(name);
+        if (item.url) {
+          const url = document.createElement("span");
+          url.className = "meta";
+          url.textContent = item.url;
+          nameCell.append(url);
+        }
+        cell(row, item.kind === "page" ? "Webpage" : "File");
+        cell(row, item.updated_at ? new Date(item.updated_at).toLocaleString() : "—");
+        cell(row, item.cleanup_pending ? "Cleanup pending" : "Indexed");
+        const action = cell(row, "");
+        if (item.kind === "file" && !item.cleanup_pending) {
+          const replace = document.createElement("button");
+          replace.type = "button";
+          replace.textContent = "Replace";
+          replace.setAttribute("aria-label", "Replace " + item.title);
+          replace.addEventListener("click", () => {
+            replacing = item.id;
+            byId("replace-name").textContent = item.title;
+            byId("replace-file").reset();
+            dialog.showModal();
+          });
+          action.append(replace);
+        }
+      }
+
+      updateControls();
+    }
+
+    function updateControls() {
+      const visible = visibleSources();
+      const selection = currentSelection();
+      const selectAll = byId("select-all");
+      const count = visible.filter((item) => selected.has(item.id)).length;
+      selectAll.checked = Boolean(visible.length && count === visible.length);
+      selectAll.indeterminate = count > 0 && count < visible.length;
+      byId("selected-count").textContent = selection.length + " selected";
+      document.querySelectorAll("button, input").forEach((element) => { element.disabled = busy; });
+      selectAll.disabled = busy || !visible.length;
+      byId("refresh").disabled = busy || !selection.some((item) => item.kind === "page" && !item.cleanup_pending);
+      byId("remove").disabled = busy || !selection.length;
+    }
+
+    async function load() {
+      sources = (await api("/sources")).sources;
+      const present = new Set(sources.map((item) => item.id));
+      for (const key of selected) {
+        if (!present.has(key)) selected.delete(key);
+      }
+      render();
+    }
+
+    async function work(message, operation) {
+      if (busy) return;
+      busy = true;
+      updateControls();
+      feedback(message);
+      try {
+        const result = await operation();
+        feedback(result.message, result.error);
+      } catch (error) {
+        feedback(error.message, true);
+      } finally {
+        busy = false;
+        updateControls();
+      }
+    }
+
+    async function reloadAfter(result) {
+      try {
+        await load();
+      } catch (error) {
+        return {...result, message: result.message + "\n" + error.message, error: true};
+      }
+      return result;
+    }
+
+    async function single(path, options, message, done) {
+      let result;
+      try {
+        const data = await api(path, options);
+        done();
+        result = {message: data.warning || message, error: Boolean(data.warning)};
+      } catch (error) {
+        result = {message: error.message, error: true};
+      }
+      return token ? reloadAfter(result) : result;
+    }
+
+    async function batch(items, action) {
+      const issues = [];
+      let completed = 0;
+      const verb = action === "refresh" ? "Updated" : "Removed";
+      for (const [index, item] of items.entries()) {
+        if (!token) break;
+        feedback((index + 1) + " / " + items.length + " · " + item.title);
+        try {
+          const path = "/sources/" + item.id + (action === "refresh" ? "/refresh" : "");
+          const data = await api(path, {method: action === "refresh" ? "POST" : "DELETE"});
+          completed += 1;
+          selected.delete(item.id);
+          if (data.warning) issues.push(item.title + " · " + data.warning);
+        } catch (error) {
+          issues.push(item.title + " · " + error.message);
+        }
+      }
+      const result = {
+        message: [verb + " " + completed + " of " + items.length + " sources.", ...issues].join("\n"),
+        error: Boolean(issues.length),
+      };
+      return token ? reloadAfter(result) : result;
+    }
+
+    function upload(file, key, done) {
+      const path = "/files" + (key ? "?key=" + encodeURIComponent(key) : "");
+      return work("Reading and indexing " + file.name + "…", () => single(path, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "X-Knowledge-Filename": encodeURIComponent(file.name),
+          "X-Knowledge-Public": "yes",
+        },
+        body: file,
+      }, key ? "File replaced and indexed." : "File added and indexed.", done));
+    }
+
+    byId("login").addEventListener("submit", (event) => {
+      event.preventDefault();
+      token = byId("token").value.trim();
+      byId("token").value = "";
+      work("Loading knowledge sources…", async () => {
+        await load();
+        byId("login").hidden = true;
+        byId("workspace").hidden = false;
+        byId("sign-out").hidden = false;
+        return {message: ""};
+      });
+    });
+    byId("sign-out").addEventListener("click", () => { signOut(); feedback(""); });
+    byId("add-page").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const url = byId("page-url").value.trim();
+      work("Reading and indexing the webpage…", () => single("/pages", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({url}),
+      }, "Webpage indexed.", () => form.reset()));
+    });
+    byId("add-file").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const file = byId("new-file").files[0];
+      if (file && confirm("Allow the website assistant to use this file in public chat answers?")) {
+        upload(file, null, () => form.reset());
+      }
+    });
+    byId("replace-file").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const file = byId("replacement").files[0];
+      if (file && replacing) {
+        const key = replacing;
+        dialog.close();
+        upload(file, key, () => byId("replace-file").reset());
+      }
+    });
+    byId("cancel-replace").addEventListener("click", () => dialog.close());
+    byId("reload").addEventListener("click", () => work("Loading knowledge sources…", async () => {
+      await load();
+      return {message: "List updated."};
+    }));
+    byId("search").addEventListener("input", render);
+    byId("select-all").addEventListener("change", (event) => {
+      for (const item of visibleSources()) {
+        if (event.target.checked) selected.add(item.id);
+        else selected.delete(item.id);
+      }
+      render();
+    });
+    byId("refresh").addEventListener("click", () => {
+      const items = currentSelection().filter((item) => item.kind === "page" && !item.cleanup_pending);
+      if (items.length && confirm("Read and re-index " + items.length + " selected webpages?")) {
+        work("Updating selected webpages…", () => batch(items, "refresh"));
+      }
+    });
+    byId("remove").addEventListener("click", () => {
+      const items = currentSelection();
+      if (items.length && confirm("Remove " + items.length + " selected sources from the assistant’s knowledge?")) {
+        work("Removing selected sources…", () => batch(items, "remove"));
+      }
+    });
+    render();
+  </script>
+</body>
+</html>

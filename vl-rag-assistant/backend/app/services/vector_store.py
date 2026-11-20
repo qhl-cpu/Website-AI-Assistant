@@ -10,6 +10,7 @@ from app.core.config import (
     QDRANT_COLLECTION_NAME,
     QDRANT_URL,
 )
+from app.knowledge.index import visibility_filter
 
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ def iter_published_page_chunks() -> Iterator[dict]:
         request. Client and request failures propagate during iteration.
     """
     client = get_qdrant_client()
+    visible = visibility_filter(client)
     offset = None
     while True:
         points, offset = client.scroll(
@@ -66,6 +68,7 @@ def iter_published_page_chunks() -> Iterator[dict]:
             scroll_filter=models.Filter(
                 must=[
                     models.FieldCondition(key="status", match=models.MatchValue(value="publish")),
+                    visible,
                 ],
                 should=[
                     models.FieldCondition(key="chunk_index", match=models.MatchValue(value=0)),
@@ -94,9 +97,15 @@ def search_qdrant(
     The returned shape matches the format expected by the RAG context
     builder: each item contains a similarity score and its chunk payload.
     """
-    response = get_qdrant_client().query_points(
+    client = get_qdrant_client()
+    visible = visibility_filter(client)
+    response = client.query_points(
         collection_name=QDRANT_COLLECTION_NAME,
         query=query_embedding,
+        query_filter=models.Filter(must=[
+            models.FieldCondition(key="status", match=models.MatchAny(any=["publish", "manual"])),
+            visible,
+        ]),
         limit=top_k * 3,
         with_payload=True,
         with_vectors=False,
@@ -120,10 +129,12 @@ def search_qdrant(
         if len(results) == top_k:
             break
 
-    return expand_campaign_results(results)
+    return expand_campaign_results(results, visible=visible)
 
 
-def expand_campaign_results(results: list[dict]) -> list[dict]:
+def expand_campaign_results(
+    results: list[dict], *, visible: models.Filter | None = None
+) -> list[dict]:
     """Include sibling 11/11 chunks so ranked hits cannot hide offers or terms.
 
     Keep other results in relevance order, expand at most two 11/11 documents,
@@ -167,6 +178,7 @@ def expand_campaign_results(results: list[dict]) -> list[dict]:
                             key="status",
                             match=models.MatchAny(any=["publish", "manual"]),
                         ),
+                        *([visible] if visible is not None else []),
                     ]),
                     limit=MAX_CAMPAIGN_CHUNKS - len(siblings),
                     offset=offset,

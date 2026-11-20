@@ -11,6 +11,50 @@ uvicorn app.main:app --reload
 The app is in http://127.0.0.1:8000
 doc: http://127.0.0.1:8000/docs
 
+## Manual knowledge library
+
+Set `KNOWLEDGE_ADMIN_TOKEN` to a strong random secret in the backend environment
+(use the Azure Container App's secret settings when enabling it there). Restart
+the API, open `/admin/knowledge` on the API host, and enter the token. For local
+testing, point the backend at a test Qdrant collection before using the buttons.
+The admin endpoints are disabled when the token is unset.
+
+The list can be previewed without Qdrant payload indexes. Before deploying this
+version to Qdrant Cloud, or testing writes against a strict-mode collection,
+check and initialize its indexes from the backend directory:
+
+```sh
+.venv/bin/python -m scripts.ensure_knowledge_indexes
+.venv/bin/python -m scripts.ensure_knowledge_indexes --apply
+```
+
+The first command only reports missing or incompatible indexes. Use the second
+when the configured target collection is the one you intend to change. It
+creates missing field indexes without altering knowledge points or generating
+embeddings. The API checks the indexes before permitting edits in strict mode.
+
+- **Add webpage** indexes one public Vancouver Laser URL. To refresh existing
+  pages, select their rows and click **Update webpages**. A row tied to a
+  WordPress record refreshes that record, even if another page uses the same URL.
+- **Upload file** accepts PDF with selectable text, DOCX, UTF-8 TXT, or Markdown
+  (up to 10 MB). Use **Replace** to update an existing file's knowledge under
+  the same record. Only upload material suitable for the public assistant. The
+  collection stores extracted text and vectors, and the original stays with you.
+- **Remove selected** takes those sources out of search and cleans up their
+  stored chunks. If cleanup fails, the source is already out of search. Select
+  the row marked **Cleanup pending** and run removal again.
+
+Each update generates fresh embeddings for the entire selected source, using the
+configured OpenAI API. A complete replacement is written to Qdrant before the
+assistant starts using it. The library uses the existing collection and lists
+its previously indexed website and manual records. No schedule or deployment is
+needed for individual changes.
+
+Run this admin feature with one backend writer (the default single Uvicorn
+worker and one Azure replica). Use the library for changes to its collection.
+The old bulk uploader is intended for separately managed collections. Code-based
+booking and product guidance is managed separately in `app/knowledge/`.
+
 ## Recovery kit knowledge
 
 `app/knowledge/recovery_kit.py` contains the clinic-provided Skin Recovery & Glow

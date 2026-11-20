@@ -1,0 +1,374 @@
+"""
+02_clean_documents.py
+
+Clean and normalize raw WordPress documents produced by 01_ingest_wordpress.py.
+
+Input:
+- data/raw/wp_documents_raw.jsonl
+
+Output:
+- data/processed/wp_documents_clean.jsonl
+
+"""
+
+import json
+import re
+from pathlib import Path
+
+
+INPUT_PATH = Path("data/raw/wp_documents_raw.jsonl")
+OUTPUT_PATH = Path("data/processed/wp_documents_clean.jsonl")
+MANUAL_INPUT_DIR = Path("data/manual")
+
+
+def normalize_whitespace(text: str) -> str:
+    """
+    Normalize messy whitespace while preserving paragraph breaks.
+
+    Example:
+    - removes extra spaces
+    - converts multiple blank lines into one blank line
+    - keeps content readable for later chunking
+    """
+    if not text:
+        return ""
+
+    # Normalize line endings.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Remove extra spaces/tabs inside each line.
+    lines = []
+    for line in text.split("\n"):
+        line = " ".join(line.split())
+        lines.append(line)
+
+    text = "\n".join(lines)
+
+    # Collapse 3+ newlines into 2 newlines.
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    return text.strip()
+
+
+def remove_repeated_lines(text: str) -> str:
+    """
+    Remove repeated lines while keeping the original order.
+
+    This helps with Elementor/ACF content where the same heading,
+    CTA text, or label may appear multiple times.
+    """
+    if not text:
+        return ""
+
+    cleaned_lines = []
+    seen = set()
+
+    for line in text.split("\n"):
+        normalized_line = line.strip()
+
+        if not normalized_line:
+            cleaned_lines.append("")
+            continue
+
+        # Use lowercase version only for duplicate detection.
+        duplicate_key = normalized_line.lower()
+
+        if duplicate_key in seen:
+            continue
+
+        seen.add(duplicate_key)
+        cleaned_lines.append(normalized_line)
+
+    return normalize_whitespace("\n".join(cleaned_lines))
+
+
+def remove_common_noise(text: str) -> str:
+    """
+    Remove common website text that is not useful for RAG.
+
+    Keep this conservative. Do not remove too aggressively because
+    clinic content may include short but important phrases.
+    """
+    if not text:
+        return ""
+
+    noise_phrases = {
+        "skip to content",
+        "book now",
+        "buy now",
+        "shop now",
+        "learn more",
+        "read more",
+        "contact us",
+        "menu",
+        "close",
+        "next",
+        "previous",
+        "submit",
+
+        # Generic repeated ACF headings
+        "concern section title do you have these concerns",
+    }
+
+    cleaned_lines = []
+
+    for line in text.split("\n"):
+        stripped = line.strip()
+
+        if not stripped:
+            cleaned_lines.append("")
+            continue
+
+        # Normalize weird spaces like non-breaking spaces.
+        normalized_line = stripped.replace("\xa0", " ")
+
+        # Remove punctuation, symbols, and emoji.
+        # Keep only letters, numbers, and spaces.
+        normalized_line = re.sub(r"[^a-zA-Z0-9\s]", "", normalized_line)
+
+        # Normalize repeated spaces and lowercase.
+        normalized_line = " ".join(normalized_line.split()).lower()
+
+        if normalized_line in noise_phrases:
+            continue
+
+        cleaned_lines.append(stripped)
+
+    return normalize_whitespace("\n".join(cleaned_lines))
+
+
+def normalize_title(title: str) -> str:
+    """
+    Clean document titles.
+
+    01_ingest_wordpress.py already removes 'publish:',
+    but this function gives us an extra safety layer.
+    """
+    if not title:
+        return ""
+
+    title = title.replace("publish:", "")
+    title = title.replace("Protected:", "")
+    title = normalize_whitespace(title)
+
+    return title
+
+
+def normalize_url(url: str) -> str:
+    """
+    Normalize URLs.
+
+    For now, keep this simple:
+    - strip whitespace
+    - remove trailing slash unless it is the domain root
+    """
+    if not url:
+        return ""
+
+    return url.strip()
+
+
+def clean_content(content: str) -> str:
+    """
+    Main content cleaning pipeline.
+
+    The order matters:
+    1. normalize whitespace
+    2. remove common website noise
+    3. remove duplicate lines
+    4. normalize whitespace again
+    """
+    content = normalize_whitespace(content)
+    content = remove_common_noise(content)
+    content = remove_repeated_lines(content)
+    content = normalize_whitespace(content)
+
+    return content
+
+
+def is_test_document(title: str, url: str, content: str) -> bool:
+    """
+    Detect test/demo documents that should not be included in the RAG dataset.
+
+    """
+    # 1. Check URL.
+    if "test" in url.lower():
+        return True
+
+    # 2. Check title.
+    if "test" in title.lower():
+        return True
+
+    # 3. Check Treatment Or Concern Name specifically.
+    for line in content.split("\n"):
+        normalized_line = " ".join(line.split()).lower()
+
+        if normalized_line.startswith("treatment or concern name:"):
+            value = normalized_line.replace("treatment or concern name:", "").strip()
+
+            if "test" in value:
+                return True
+
+    return False
+
+
+def is_document_short(content: str) -> bool:
+    """
+    Decide whether a cleaned document should be kept.
+
+    A document should have:
+    - have enough content
+    """
+    # Avoid saving almost-empty pages.
+    if len(content.split()) < 20:
+        return True
+
+    return False
+
+
+def clean_document(raw_document: dict) -> dict:
+    """
+    Clean one raw WordPress document and preserve important metadata.
+    """
+    title = normalize_title(raw_document.get("title", ""))
+    url = normalize_url(raw_document.get("url", ""))
+    content = clean_content(raw_document.get("content", ""))
+
+    cleaned_document = {
+        "wp_id": raw_document.get("wp_id"),
+        "doc_id": raw_document.get("doc_id"),
+        "url": url,
+        "title": title,
+        "status": raw_document.get("status"),
+        "post_type": raw_document.get("post_type"),
+        "page_type": raw_document.get("page_type", "general"),
+        "content": content,
+        "source": raw_document.get("source", "wordpress_rest_api"),
+        "cleaning_version": "v1",
+        "word_count": len(content.split()),
+        "char_count": len(content),
+    }
+
+    return cleaned_document
+
+
+def read_jsonl(path: Path) -> list[dict]:
+    """
+    Read a JSONL file into a list of dictionaries.
+    """
+    documents = []
+
+    with path.open("r", encoding="utf-8") as f:
+        for line_number, line in enumerate(f, start=1):
+            line = line.strip()
+
+            if not line:
+                continue
+
+            try:
+                documents.append(json.loads(line))
+            except json.JSONDecodeError as error:
+                print(f"Skipping invalid JSON on line {line_number}: {error}")
+
+    return documents
+
+
+def write_jsonl(path: Path, documents: list[dict]) -> None:
+    """
+    Write dictionaries to a JSONL file.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with path.open("w", encoding="utf-8") as f:
+        for document in documents:
+            f.write(json.dumps(document, ensure_ascii=False) + "\n")
+
+
+def read_manual_documents(directory: Path) -> list[dict]:
+    """
+    Read all manual JSONL files from the manual document directory.
+
+    Manual documents should use the same basic schema as WordPress documents:
+    - wp_id
+    - doc_id
+    - url
+    - title
+    - status
+    - post_type
+    - page_type
+    - content
+    - source
+    """
+    manual_documents = []
+
+    if not directory.exists():
+        return manual_documents
+
+    for path in sorted(directory.glob("*.jsonl")):
+        manual_documents.extend(read_jsonl(path))
+
+    return manual_documents
+
+
+def main():
+    """
+    Clean raw WordPress documents and save processed documents.
+    """
+    if not INPUT_PATH.exists():
+        raise FileNotFoundError(
+            f"Input file not found: {INPUT_PATH}. "
+            "Run 01_ingest_wordpress.py first."
+        )
+
+    raw_documents = read_jsonl(INPUT_PATH)
+    manual_documents = read_manual_documents(MANUAL_INPUT_DIR)
+    all_documents = raw_documents + manual_documents
+
+    cleaned_documents = []
+    no_title_or_url_count = 0
+    short_count = 0
+    test_page_count = 0
+    manual_count = 0
+
+    for raw_document in all_documents:
+        cleaned_document = clean_document(raw_document)
+        title = cleaned_document.get("title") or ""
+        url = cleaned_document.get("url") or ""
+        content = cleaned_document.get("content") or ""
+        source = cleaned_document.get("source") or ""
+
+
+        if not title or not url:
+            no_title_or_url_count += 1
+            continue
+        if is_document_short(content):
+            short_count += 1
+            continue
+        if is_test_document(title, url, content):
+            test_page_count += 1
+            continue
+        if source == "manual":
+            manual_count += 1
+        cleaned_documents.append(cleaned_document)
+
+    write_jsonl(OUTPUT_PATH, cleaned_documents)
+
+    print(f"Read {len(raw_documents)} raw documents from {INPUT_PATH}")
+    print(f"Read {len(manual_documents)} manual documents from {MANUAL_INPUT_DIR}")
+    print(f"Added {manual_count} manual documents")
+    print(f"Skipped {no_title_or_url_count} documents because they doesn't have a title or url")
+    print(f"Skipped {short_count} documents because they were too short")
+    print(f"Skipped {test_page_count} documents because they were made for testing purpose")
+    print(f"Saved {len(cleaned_documents)} cleaned documents to {OUTPUT_PATH}")
+
+    if cleaned_documents:
+        word_counts = [doc["word_count"] for doc in cleaned_documents]
+
+        print("\nCleaning summary:")
+        print(f"- Min words: {min(word_counts)}")
+        print(f"- Max words: {max(word_counts)}")
+        print(f"- Average words: {sum(word_counts) // len(word_counts)}")
+
+
+if __name__ == "__main__":
+    main()

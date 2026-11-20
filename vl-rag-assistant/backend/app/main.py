@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.admin.knowledge import router as knowledge_admin_router
 from app.core.config import (
     ALLOWED_ORIGINS,
     CHAT_IP_DAILY_REQUESTS,
@@ -22,6 +23,7 @@ from app.core.config import (
     IS_PRODUCTION,
     TRUST_X_FORWARDED_FOR,
 )
+from app.knowledge.index import require_knowledge_indexes
 from app.schemas import (
     ChatRequest,
     ChatResponse,
@@ -33,7 +35,7 @@ from app.services.rate_limiter import (
     InMemorySlidingWindowRateLimiter,
     RateLimitRule,
 )
-from app.services.vector_store import get_collection_point_count
+from app.services.vector_store import get_collection_point_count, get_qdrant_client
 
 
 logger = logging.getLogger(__name__)
@@ -81,6 +83,7 @@ app = FastAPI(
     openapi_url=None if IS_PRODUCTION else "/openapi.json",
 )
 
+app.include_router(knowledge_admin_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -113,10 +116,10 @@ def health_check():
 @app.get("/ready")
 def readiness_check():
     """
-    Confirm that the API can reach its Qdrant collection.
+    Confirm that Qdrant is reachable and supports the application's filters.
     """
     try:
-        get_collection_point_count()
+        require_knowledge_indexes(get_qdrant_client())
 
     except Exception:
         logger.exception("Readiness check failed")

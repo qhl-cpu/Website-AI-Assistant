@@ -49,7 +49,7 @@ class CampaignContextTests(unittest.TestCase):
         second = campaign_chunk(1, text="Hair Boost, Ultherapy® Prime, Thermage® FLX")
         client = get_client.return_value
         client.query_points.return_value = SimpleNamespace(points=[point(second)])
-        client.scroll.return_value = ([point(first), point(second)], None)
+        client.scroll.side_effect = [([], None), ([point(first), point(second)], None)]
 
         results = search_qdrant([0.1], top_k=1)
         context, sources = build_context(results)
